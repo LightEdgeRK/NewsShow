@@ -1,0 +1,4 @@
+news_show:
+    resource: "@NewsShowBundle/Resources/config/routing.yml"
+    prefix:   /
+
