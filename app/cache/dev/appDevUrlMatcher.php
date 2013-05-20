@@ -211,6 +211,16 @@ class appDevUrlMatcher extends Symfony\Bundle\FrameworkBundle\Routing\Redirectab
             return $this->mergeDefaults(array_replace($matches, array('_route' => 'news_show_homepage')), array (  '_controller' => 'Roozbeh\\NewsShowBundle\\Controller\\DefaultController::indexAction',));
         }
 
+        // news_show_news
+        if ($pathinfo === '/news') {
+            return array (  '_controller' => 'Roozbeh\\NewsShowBundle\\Controller\\DefaultController::newsAction',  '_route' => 'news_show_news',);
+        }
+
+        // news_show_main
+        if ($pathinfo === '/main') {
+            return array (  '_controller' => 'Roozbeh\\NewsShowBundle\\Controller\\DefaultController::indexAction',  '_route' => 'news_show_main',);
+        }
+
         throw 0 < count($allow) ? new MethodNotAllowedException(array_unique($allow)) : new ResourceNotFoundException();
     }
 }
