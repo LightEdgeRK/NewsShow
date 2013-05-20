@@ -1,2 +1,69 @@
-Hello {{ name }}!
-salam {{ name }}!
+<html>
+
+<head>
+    <title>News Show</title>
+	{% block stylesheets %}
+    <link href="{{ asset('bundles/newsshow/css/design.css') }}" rel="stylesheet" type="text/css"  >
+	{% endblock %}
+</head>
+
+<body>
+    {% block javascripts %}
+	<script src="{{ asset('bundles/newsshow/js/jquery-1.9.1.min.js') }}" type="text/javascript"></script>
+	<script src="{{ asset('bundles/newsshow/js/jquery.masonry.min.js') }}" type="text/javascript"></script>
+    {% endblock %}
+
+	<div id="main">
+		<div id="navBar">
+			<div class="navItem" style="background-color:#BF9004"> Main </div>
+			<div class="navItem" > Search </div>
+			<div class="navItem" > Register/Login </div>
+			<div style="clear:both;"> </div>
+		</div>
+		
+		<div id="mainContent">
+			<div id="NewsBox">
+				<div class="newsSummaryItem">
+					<img class="newsImg" src="jafang.jpg"/>
+					<div class="newsTitle"> JAFANG </div>
+					<div class="newsSum"> lorem ipsum dolor sit amet ! </div>
+					<div class="newsAuthor"> Roozbeh </div>
+					<div class="newsTime"> 10:30 AM </div>
+					<div class="newsGroup"> category: <span class="newsGroupName"> JAFANG </span> </div>
+				</div>
+				<div class="newsSummaryItem">
+					<img class="newsImg" src="jafang.jpg"/>				
+					<div class="newsTitle"> JAFANG </div>
+					<div class="newsSum"> lorem ipsum dolor sit amet ! lorem ipsum dolor sit amet ! lorem ipsum dolor sit amet ! lorem ipsum dolor sit amet !</div>
+					<div class="newsAuthor"> Roozbeh </div>
+					<div class="newsTime"> 10:30 AM </div>
+					<div class="newsGroup"> category: <span class="newsGroupName"> JAFANG </span> </div>
+				</div>
+				
+				<div class="newsSummaryItem">
+					<img class="newsImg" src="jafang.jpg"/>								
+					<div class="newsTitle"> JAFANG </div>
+					<div class="newsSum"> lorem ipsum dolor sit amet ! </div>
+					<div class="newsAuthor"> Roozbeh </div>
+					<div class="newsTime"> 10:30 AM </div>
+					<div class="newsGroup"> category: <span class="newsGroupName"> JAFANG </span> </div>
+				</div>
+				<div style="clear:both;"> </div>
+
+
+			</div>
+			
+		</div>
+		
+		<script type="text/javascript">
+			
+			$('#NewsBox').masonry({
+				  itemSelector: '.newsSummaryItem',
+				  columnWidth: 400
+				});
+		</script>
+	</div>
+
+
+</body>
+</html>

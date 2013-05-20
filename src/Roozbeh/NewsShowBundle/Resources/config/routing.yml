@@ -5,3 +5,7 @@ news_show_homepage:
 news_show_news:
     pattern:  /news
     defaults: { _controller: NewsShowBundle:Default:news }
+
+news_show_main:
+  path: /main
+  defaults: {_controller: NewsShowBundle:Default:index}
