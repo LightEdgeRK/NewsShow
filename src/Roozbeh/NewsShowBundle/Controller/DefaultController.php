@@ -10,4 +10,10 @@ class DefaultController extends Controller
     {
         return $this->render('NewsShowBundle:Default:index.html.twig', array('name' => $name));
     }
+
+    public function newsAction()
+    {
+        $arr = array('mehdi' => 12,'rzb'=> 34);
+        return $this->render('NewsShowBundle:Default:news.html.twig', $arr);
+    }
 }

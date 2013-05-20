@@ -1,3 +1,7 @@
 news_show_homepage:
     pattern:  /hello/{name}
     defaults: { _controller: NewsShowBundle:Default:index }
+
+news_show_news:
+    pattern:  /news
+    defaults: { _controller: NewsShowBundle:Default:news }
