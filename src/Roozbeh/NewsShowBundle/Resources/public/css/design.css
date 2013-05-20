@@ -1,0 +1,64 @@
+/*
+Color theme:
+dark: 25261E
+light gold: BF9004
+dark gold: A66D03
+bezh? A69576
+whitish F2F2F2
+*/
+body
+{
+	background-color: #D9D1BA;
+}
+#main
+{
+	width:800px;
+	margin: 0 auto;
+}
+
+#navBar
+{
+	margin-top:30px;
+	background-color: #A66D03;
+	line-height:30px;
+	vertical-align:center;
+}
+
+#navBar .navItem
+{
+	float:left;
+	padding-right:10px;
+	padding-left:10px;
+}
+
+#navBar .navItem:hover
+{
+	background-color: #BF9004;	
+	cursor:pointer;
+}
+
+#mainContent
+{
+	margin-top:20px;
+	background-color:#A99A42;
+}
+
+.newsSummaryItem
+{
+	width:380px;
+	float:left;
+	background-color: #DCD191;
+	margin-right:0;
+	margin-left:10px;
+	margin-top:10px;
+	margin-bottom:10px;
+}
+
+.newsSummaryItem img
+{
+	max-width:100px;
+	float:right;
+	margin-top:10px;
+	margin-right:10px;
+	
+}
