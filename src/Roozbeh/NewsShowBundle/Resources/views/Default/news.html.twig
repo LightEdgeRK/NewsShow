@@ -1,1 +1,25 @@
-{{ rzb }}
+{% extends 'NewsShowBundle:Default:index.html.twig' %}
+{% block navBar %}
+    <div class="navItem" style="background-color:#BF9004"> Main </div>
+    <div class="navItem" > Search </div>
+    <div class="navItem" > Register/Login </div>
+{% endblock %}
+
+{% block mainContent %}
+    <div id="NewsBox">
+        {% for newsSumItem in newsSumItems %}
+
+            <div class="newsSummaryItem">
+                <img class="newsImg" src="{{ asset( newsSumItem.ImgSrc ) }}"/>
+                <div class="newsTitle"> {{ newsSumItem.title }}</div>
+                <div class="newsSum"> {{ newsSumItem.summary }} </div>
+                <div class="newsAuthor"> {{ newsSumItem.author }} </div>
+                <div class="newsTime"> {{ newsSumItem.time }} </div>
+                <div class="newsGroup"> Category: <span class="newsGroupName"> {{ newsSumItem.groupName }} </span> </div>
+            </div>
+
+        {% endfor %}
+
+        <div style="clear:both;"> </div>
+    </div>
+{% endblock %}

@@ -9,3 +9,4 @@ news_show_news:
 news_show_main:
   path: /main
   defaults: {_controller: NewsShowBundle:Default:index}
+
