@@ -34,7 +34,7 @@ class DefaultController extends Controller
     public function newsAction()
     {
         $items[] = new newsSummary('test1','roozbeh1','charand e mozakhraf 1','9:30 1' , 'siasi 1' , 'bundles/newsshow/images/jafang.jpg');
-        $items[] = new newsSummary('test2','roozbeh2','charand e mozakhraf 2','9:30 2' , 'siasi 2' , 'bundles/newsshow/images/jafang.jpg');
+        $items[] = new newsSummary('test2','roozbeh2','charand e mozakhraf charand e mozakhraf charand e mozakhraf charand e mozakhraf charand e mozakhraf charand e mozakhraf ','9:30 2' , 'siasi 2' , 'bundles/newsshow/images/jafang.jpg');
         $items[] = new newsSummary('test3','roozbeh3','charand e mozakhraf 3','9:30 3' , 'siasi 3' , 'bundles/newsshow/images/jafang.jpg');
         $arr = array('newsSumItems' => $items );
 
