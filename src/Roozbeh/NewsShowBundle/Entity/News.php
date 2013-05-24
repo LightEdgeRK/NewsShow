@@ -9,6 +9,7 @@
 
 namespace Roozbeh\NewsShowBundle\Entity;
 
+use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\ORM\Mapping as ORM;
 
 /**
@@ -56,6 +57,21 @@ class News {
     protected $category;
 
 
+    /**
+     * @ORM\ManyToOne(targetEntity="Author",inversedBy="newsItems")
+     * @ORM\JoinColumn(name="AID",referencedColumnName="AID")
+     */
+    protected $author;
+
+    /**
+     * @ORM\OneToMany(targetEntity="Comment", mappedBy="newsItem")
+     */
+    protected $comments;
+
+    public function __construct()
+    {
+        $this->comments = new ArrayCollection();
+    }
 
 
     /**
@@ -204,5 +220,61 @@ class News {
     public function getCategory()
     {
         return $this->category;
+    }
+
+    /**
+     * Set author
+     *
+     * @param \Roozbeh\NewsShowBundle\Entity\Author $author
+     * @return News
+     */
+    public function setAuthor(\Roozbeh\NewsShowBundle\Entity\Author $author = null)
+    {
+        $this->author = $author;
+    
+        return $this;
+    }
+
+    /**
+     * Get author
+     *
+     * @return \Roozbeh\NewsShowBundle\Entity\Author 
+     */
+    public function getAuthor()
+    {
+        return $this->author;
+    }
+
+    /**
+     * Add comments
+     *
+     * @param \Roozbeh\NewsShowBundle\Entity\Comment $comments
+     * @return News
+     */
+    public function addComment(\Roozbeh\NewsShowBundle\Entity\Comment $comments)
+    {
+        $this->comments[] = $comments;
+    
+        return $this;
+    }
+
+    /**
+     * Remove comments
+     *
+     * @param \Roozbeh\NewsShowBundle\Entity\Comment $comments
+     */
+    public function removeComment(\Roozbeh\NewsShowBundle\Entity\Comment $comments)
+    {
+        $this->comments->removeElement($comments);
+    }
+
+    /**
+     * Get comments
+     *
+     * @return \Doctrine\Common\Collections\Collection 
+     */
+    public function getComments()
+    {
+        return $this->comments;
     }
 }
