@@ -6,6 +6,14 @@ _login:
     pattern:  /login
     defaults: { _controller: NewsShowBundle:Default:login }
 
+_search:
+    pattern:  /search
+    defaults: { _controller: NewsShowBundle:Default:search }
+
+_write:
+    pattern:  /write
+    defaults: { _controller: NewsShowBundle:Default:write }
+
 _main:
   pattern: /main
   defaults: {_controller: NewsShowBundle:Default:index}

@@ -152,6 +152,16 @@ class appDevUrlMatcher extends Symfony\Bundle\FrameworkBundle\Routing\Redirectab
             return array (  '_controller' => 'Roozbeh\\NewsShowBundle\\Controller\\DefaultController::loginAction',  '_route' => '_login',);
         }
 
+        // _search
+        if ($pathinfo === '/search') {
+            return array (  '_controller' => 'Roozbeh\\NewsShowBundle\\Controller\\DefaultController::searchAction',  '_route' => '_search',);
+        }
+
+        // _write
+        if ($pathinfo === '/write') {
+            return array (  '_controller' => 'Roozbeh\\NewsShowBundle\\Controller\\DefaultController::writeAction',  '_route' => '_write',);
+        }
+
         // _main
         if ($pathinfo === '/main') {
             return array (  '_controller' => 'Roozbeh\\NewsShowBundle\\Controller\\DefaultController::indexAction',  '_route' => '_main',);

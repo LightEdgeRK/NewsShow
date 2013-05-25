@@ -1,0 +1,14 @@
+{% extends 'NewsShowBundle:Default:index.html.twig' %}
+
+{% block mainContent %}
+
+    <script type="text/javascript">
+
+        $('#NewsBox').masonry({
+            itemSelector: '.newsSummaryItem',
+            columnWidth: 400
+        });
+
+        $('#navWriteNews').css('background-color','#BF9004');
+    </script>
+{% endblock %}

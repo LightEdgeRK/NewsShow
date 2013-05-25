@@ -57,11 +57,21 @@ class DefaultController extends Controller
         {
             $session->set('logged',true);
             $session->set('user_name','Roozbeh');
-            return $this->render('NewsShowBundle:Default:login.html.twig'); //TODO: Change to Write News Page
+            return $this->newsAction();
         }
 
 
 
 
+    }
+
+    public function searchAction()
+    {
+        return $this->render('NewsShowBundle:Default:search.html.twig');
+    }
+
+    public function writeAction()
+    {
+        return $this->render('NewsShowBundle:Default:write.html.twig');
     }
 }
