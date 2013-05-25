@@ -1,12 +1,12 @@
-news_show_homepage:
-    pattern:  /hello/{name}
-    defaults: { _controller: NewsShowBundle:Default:index }
-
-news_show_news:
+_news:
     pattern:  /news
     defaults: { _controller: NewsShowBundle:Default:news }
 
-news_show_main:
-  path: /main
+_login:
+    pattern:  /login
+    defaults: { _controller: NewsShowBundle:Default:login }
+
+_main:
+  pattern: /main
   defaults: {_controller: NewsShowBundle:Default:index}
 

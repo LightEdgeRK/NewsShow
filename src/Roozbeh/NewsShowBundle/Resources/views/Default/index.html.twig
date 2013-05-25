@@ -17,6 +17,17 @@
 	<div id="main">
 		<div id="navBar">
             {% block navBar %}
+                <div class="navItem" id="navMain" onclick="navigate(1)"> Main </div>
+                <div class="navItem" id="navSearch" onclick="navigate(2)"> Search </div>
+                {% if app.session.get('logged') == true %}
+                    <div class="navItem" id="navWriteNews" onclick="navigate(4)" > Write News </div>
+
+                    <div class="navItem" id="navSignOut" onclick="navigate(5)" > Sign Out </div>
+                    <div class="navItem" id="navWelcome"> Welcome {{ app.session.get('user_name') }} </div>
+
+                {%  else %}
+                    <div class="navItem" id="navLogin" onclick="navigate(3)" > Register/Login </div>
+                {% endif %}
 
             {% endblock %}
 			<div style="clear:both;"> </div>
@@ -27,18 +38,17 @@
 
             {% endblock %}
 		</div>
-		
-		<script type="text/javascript">
-			
-			$('#NewsBox').masonry({
-				  itemSelector: '.newsSummaryItem',
-				  columnWidth: 400
-				});
 
-
-		</script>
 	</div>
 
+    <script type="text/javascript">
+
+        function navigate(a)
+        {
+            location.href = a==1 ? "news" : a==5 ? 'login?signout=true' : "login";
+        }
+
+    </script>
 
 </body>
 </html>

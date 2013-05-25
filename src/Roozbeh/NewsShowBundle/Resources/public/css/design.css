@@ -37,6 +37,18 @@ body
 	cursor:pointer;
 }
 
+#navBar #navSignOut
+{
+    float:right;
+}
+
+#navBar #navWelcome
+{
+    background-color: #A66D03;
+    cursor:default;
+    float:right;
+}
+
 #mainContent
 {
 	margin-top:20px;
@@ -60,5 +72,20 @@ body
 	float:right;
 	margin-top:10px;
 	margin-right:10px;
+	
+}
+
+#loginForm , #signupForm
+{
+	font-family:tahoma;
+	text-align:right;
+	float:right;
+	padding:20px;
+	
+}
+#loginForm 
+{
+	
+	border-left:1px #D9D1BA solid;
 	
 }

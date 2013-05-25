@@ -142,19 +142,19 @@ class appDevUrlMatcher extends Symfony\Bundle\FrameworkBundle\Routing\Redirectab
 
         }
 
-        // news_show_homepage
-        if (0 === strpos($pathinfo, '/hello') && preg_match('#^/hello/(?P<name>[^/]++)$#s', $pathinfo, $matches)) {
-            return $this->mergeDefaults(array_replace($matches, array('_route' => 'news_show_homepage')), array (  '_controller' => 'Roozbeh\\NewsShowBundle\\Controller\\DefaultController::indexAction',));
-        }
-
-        // news_show_news
+        // _news
         if ($pathinfo === '/news') {
-            return array (  '_controller' => 'Roozbeh\\NewsShowBundle\\Controller\\DefaultController::newsAction',  '_route' => 'news_show_news',);
+            return array (  '_controller' => 'Roozbeh\\NewsShowBundle\\Controller\\DefaultController::newsAction',  '_route' => '_news',);
         }
 
-        // news_show_main
+        // _login
+        if ($pathinfo === '/login') {
+            return array (  '_controller' => 'Roozbeh\\NewsShowBundle\\Controller\\DefaultController::loginAction',  '_route' => '_login',);
+        }
+
+        // _main
         if ($pathinfo === '/main') {
-            return array (  '_controller' => 'Roozbeh\\NewsShowBundle\\Controller\\DefaultController::indexAction',  '_route' => 'news_show_main',);
+            return array (  '_controller' => 'Roozbeh\\NewsShowBundle\\Controller\\DefaultController::indexAction',  '_route' => '_main',);
         }
 
         throw 0 < count($allow) ? new MethodNotAllowedException(array_unique($allow)) : new ResourceNotFoundException();

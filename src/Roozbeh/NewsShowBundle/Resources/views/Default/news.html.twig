@@ -1,9 +1,4 @@
 {% extends 'NewsShowBundle:Default:index.html.twig' %}
-{% block navBar %}
-    <div class="navItem" style="background-color:#BF9004"> Main </div>
-    <div class="navItem" > Search </div>
-    <div class="navItem" > Register/Login </div>
-{% endblock %}
 
 {% block mainContent %}
     <div id="NewsBox">
@@ -18,8 +13,19 @@
                 <div class="newsGroup"> Category: <span class="newsGroupName"> {{ newsSumItem.groupName }} </span> </div>
             </div>
 
+
         {% endfor %}
 
         <div style="clear:both;"> </div>
     </div>
+
+    <script type="text/javascript">
+
+        $('#NewsBox').masonry({
+            itemSelector: '.newsSummaryItem',
+            columnWidth: 400
+        });
+
+        $('#navMain').css('background-color','#BF9004');
+    </script>
 {% endblock %}

@@ -4,6 +4,8 @@ namespace Roozbeh\NewsShowBundle\Controller;
 
 use Symfony\Bundle\FrameworkBundle\Controller\Controller;
 
+use Symfony\Component\HttpFoundation\Request;
+
 class newsSummary
 {
     public $title;
@@ -39,5 +41,27 @@ class DefaultController extends Controller
         $arr = array('newsSumItems' => $items );
 
         return $this->render('NewsShowBundle:Default:news.html.twig',$arr);
+    }
+
+    public function loginAction()
+    {
+        $request = $this->getRequest();
+        $session = $request->getSession();
+        if( $request->query->get('signout') == 'true' )
+        {
+            $session->remove('logged');
+            $session->remove('user_name');
+            return $this->render('NewsShowBundle:Default:login.html.twig');
+        }
+        else
+        {
+            $session->set('logged',true);
+            $session->set('user_name','Roozbeh');
+            return $this->render('NewsShowBundle:Default:login.html.twig'); //TODO: Change to Write News Page
+        }
+
+
+
+
     }
 }
