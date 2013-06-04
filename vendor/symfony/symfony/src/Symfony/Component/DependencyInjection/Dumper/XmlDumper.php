@@ -127,6 +127,15 @@ class XmlDumper extends Dumper
         if (!$definition->isPublic()) {
             $service->setAttribute('public', 'false');
         }
+        if ($definition->isSynthetic()) {
+            $service->setAttribute('synthetic', 'true');
+        }
+        if ($definition->isSynchronized()) {
+            $service->setAttribute('synchronized', 'true');
+        }
+        if ($definition->isLazy()) {
+            $service->setAttribute('lazy', 'true');
+        }
 
         foreach ($definition->getTags() as $name => $tags) {
             foreach ($tags as $attributes) {
@@ -238,6 +247,9 @@ class XmlDumper extends Dumper
                     $element->setAttribute('on-invalid', 'null');
                 } elseif ($behaviour == ContainerInterface::IGNORE_ON_INVALID_REFERENCE) {
                     $element->setAttribute('on-invalid', 'ignore');
+                }
+                if (!$value->isStrict()) {
+                    $element->setAttribute('strict', 'false');
                 }
             } elseif ($value instanceof Definition) {
                 $element->setAttribute('type', 'service');

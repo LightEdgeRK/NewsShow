@@ -2,9 +2,16 @@
 
 namespace Roozbeh\NewsShowBundle\Controller;
 
+
 use Symfony\Bundle\FrameworkBundle\Controller\Controller;
 
 use Symfony\Component\HttpFoundation\Request;
+
+use Symfony\Component\Security\Core\SecurityContext;
+
+use Roozbeh\NewsShowBundle\Entity;
+
+use Symfony\Component\Form;
 
 class newsSummary
 {
@@ -43,26 +50,65 @@ class DefaultController extends Controller
         return $this->render('NewsShowBundle:Default:news.html.twig',$arr);
     }
 
-    public function loginAction()
+    public function loginAction(Request $request)
     {
-        $request = $this->getRequest();
+        //$request = $this->getRequest();
         $session = $request->getSession();
-        if( $request->query->get('signout') == 'true' )
-        {
-            $session->remove('logged');
-            $session->remove('user_name');
-            return $this->render('NewsShowBundle:Default:login.html.twig');
-        }
-        else
-        {
-            $session->set('logged',true);
-            $session->set('user_name','Roozbeh');
-            return $this->newsAction();
+
+        if ($request->attributes->has(SecurityContext::AUTHENTICATION_ERROR)) {
+            $error = $request->attributes->get(
+                SecurityContext::AUTHENTICATION_ERROR
+            );
+        } else {
+            $error = $session->get(SecurityContext::AUTHENTICATION_ERROR);
+            $session->remove(SecurityContext::AUTHENTICATION_ERROR);
         }
 
 
+        $a = new Entity\Author();
 
 
+        $form = $this->createFormBuilder($a)
+            ->add('Username', 'text')
+            ->add('Password', 'password')
+            ->add('Firstname' ,'text')
+            ->add('Lastname', 'text')
+            ->add('Categories','entity', array('class' => 'NewsShowBundle:Category' , 'property' => 'name' ,'multiple' => 'true' , 'expanded' => 'true') )
+            ->add('signUp', 'submit')
+            ->getForm();
+
+        $form->handleRequest($request);
+
+        if($form->isValid())
+        {
+            $em = $this->getDoctrine()->getManager();
+
+            $newAuthor = $form->getData();
+
+            $factory = $this->get('security.encoder_factory');
+            $encoder = $factory->getEncoder($newAuthor);
+            $password = $encoder->encodePassword($newAuthor->getPassword() , $newAuthor->getSalt());
+            $newAuthor->setPassword($password);
+
+            //try
+            //{
+                $em->persist($newAuthor);
+                $em->flush();
+            //}
+            //catch(\Exception $e)
+            //{
+             //   $form->addError(new Form\formError("Failed. Maybe username already exists?"));
+            //}
+        }
+
+        return $this->render(
+            'NewsShowBundle:Default:login.html.twig',
+            array(
+                'last_username' => $session->get(SecurityContext::LAST_USERNAME),
+                'error'         => $error,
+                'form' => $form->createView()
+            )
+        );
     }
 
     public function searchAction()

@@ -2,26 +2,30 @@
 
 {% block mainContent %}
     <div id="loginBox">
-        <form id="loginForm" method="post"  action="query.php">
-            <span>  برای ورود نام کاربری و رمز عبور خود را وارد کنید </span> <br/>
-            <input type="text" name="userName"/> :نام کاربری
-            <br/>
-            <input type="password" name="passWord"/> :کلمه‌ی عبور
-            <br/>
-            <input type="submit" name="login" value="ورود"/>
-            <input type="hidden" name="formType" value="login"/>
-            <div id="login_result">  </div>
+        <form id="loginForm" action="{{ path('login_check') }}" method="post">
+
+            <div>To login enter credentials below:</div>
+            {% if error %}
+                <div style="color:red">{{ error.message }}</div>
+            {% endif %}
+
+            <label for="username">Username:</label>
+            <input type="text" id="username" name="_username" value="{{ last_username }}" /> <br/>
+
+            <label for="password">Password:</label>
+            <input type="password" id="password" name="_password" />
+
+            {#
+                If you want to control the URL the user is redirected to on success (more details below)
+                <input type="hidden" name="_target_path" value="/account" />
+            #}
+
+            <button type="submit">login</button>
         </form>
-        <form id="signupForm" method="post" action="query.php">
-            <span> برای ساختن اکانت نام‌ کاربری و کلمه عبور خود را وارد نمایید </span> <br/>
-            <input type="text" name="userName"/>  :نام کاربری
-            <br/>
-            <input type="password" name="passWord"/> :کلمه‌ی عبور
-            <br/>
-            <input type="submit" name="signup" value="ثبت نام"/>
-            <input type="hidden" name="formType" value="signup"/>
-            <div id="signup_result"> </div>
-        </form>
+
+        {{ form(form, { 'id' : 'signupForm' }) }}
+
+
         <div style="clear:both;"></div>
     </div>
 

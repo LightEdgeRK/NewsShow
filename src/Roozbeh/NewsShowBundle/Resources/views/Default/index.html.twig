@@ -19,11 +19,11 @@
             {% block navBar %}
                 <div class="navItem" id="navMain" onclick="navigate(1)"> Main </div>
                 <div class="navItem" id="navSearch" onclick="navigate(2)"> Search </div>
-                {% if app.session.get('logged') == true %}
+                {% if is_granted('ROLE_USER') or is_granted('ROLE_ADMIN') %}
                     <div class="navItem" id="navWriteNews" onclick="navigate(4)" > Write News </div>
 
                     <div class="navItem" id="navSignOut" onclick="navigate(5)" > Sign Out </div>
-                    <div class="navItem" id="navWelcome"> Welcome {{ app.session.get('user_name') }} </div>
+                    <div class="navItem" id="navWelcome"> Welcome {{ app.user.username }} </div>
 
                 {%  else %}
                     <div class="navItem" id="navLogin" onclick="navigate(3)" > Register/Login </div>
@@ -45,7 +45,7 @@
 
         function navigate(a)
         {
-            location.href = a==1 ? "news" : a==2 ? 'search' : a==3 ? 'login' : a==4 ? 'write' : a==5 ? 'login?signout=true' : "login";
+            location.href = a==1 ? "news" : a==2 ? 'search' : a==3 ? 'login' : a==4 ? 'write' : a==5 ? 'logout' : "login";
         }
 
     </script>

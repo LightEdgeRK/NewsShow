@@ -18,3 +18,12 @@ _main:
   pattern: /main
   defaults: {_controller: NewsShowBundle:Default:index}
 
+login:
+  pattern: /login
+  defaults: { _controller: NewsShowBundle:Default:login }
+
+login_check:
+  pattern: /login_check
+
+logout:
+  pattern: /logout

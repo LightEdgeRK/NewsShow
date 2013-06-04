@@ -78,14 +78,13 @@ body
 #loginForm , #signupForm
 {
 	font-family:tahoma;
-	text-align:right;
-	float:right;
+
 	padding:20px;
 	
 }
 #loginForm 
 {
-	
+    float:right;
 	border-left:1px #D9D1BA solid;
 	
 }
