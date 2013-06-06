@@ -2,13 +2,115 @@
 
 {% block mainContent %}
 
+    <div id="CategoriesBlock">
+        <div style="margin-left:5px; margin-top:5px;"> Categories: </div>
+        {% for cat in categories %}
+
+            <div class="categoryItem" onclick="searchCategory('{{ cat.GID }}')">
+                {{ cat.Name }}
+            </div>
+
+
+        {% endfor %}
+
+        <div style="clear:both;"></div>
+    </div>
+
+    <div id="SearchBlock">
+        <div style="margin-left:5px; margin-top:5px;">To search for author, title or news content use the box below:</div>
+        <form id="searchForm" method="post" style="margin-left:5px;">
+            <label>Search:</label>
+            <input type="text" name="q" id="searchField"/>
+            <button type="button" onclick="search()">search</button>
+        </form>
+    </div>
+
+    <div style="clear:both;"></div>
+
+    <div id="SearchResultsBlock">
+
+        {#
+            <div class="newsSummaryItem">
+                <img class="newsImg" src="{{ asset( newsSumItem.ImgSrc ) }}"/>
+                <div class="newsTitle"> {{ newsSumItem.title }}</div>
+                <div class="newsSum"> {{ newsSumItem.summary }} </div>
+                <div class="newsAuthor"> {{ newsSumItem.author }} </div>
+                <div class="newsTime"> {{ newsSumItem.time }} </div>
+                <div class="newsGroup"> Category: <span class="newsGroupName"> {{ newsSumItem.groupName }} </span> </div>
+            </div>
+        #}
+
+    </div>
+
     <script type="text/javascript">
-
-        $('#NewsBox').masonry({
-            itemSelector: '.newsSummaryItem',
-            columnWidth: 400
-        });
-
         $('#navSearch').css('background-color','#BF9004');
+
+        var C_h = $('#CategoriesBlock').height();
+        var S_h = $('#SearchBlock').height();
+
+        if(C_h < S_h)
+            $('#CategoriesBlock').height(S_h);
+        else
+            $('#SearchBlock').height(C_h);
+
+
+        function search()
+        {
+            $.post( 'search' ,{ q: $('#searchField').val() },function(data)
+            {
+                console.log(data);
+                var container = $('#SearchResultsBlock');
+                container.empty();
+                for(var i = 0;i < data.length; i++)
+                {
+                    container.append(
+                        '<div class="newsSummaryItem">' +
+                            '<img class="newsImg" src="' + '/NewsShow/web/'+ data[i].imgLink + '"/>' +
+                            '<div class="newsTitle">' + data[i].title + '</div>' +
+                            '<div class="newsSum">' + data[i].summary + '</div>' +
+                            '<div class="newsAuthor">' + data[i].author  + '</div>' +
+                            '<div class="newsTime">' + data[i].datetime + '</div>' +
+                            '<div class="newsGroup"> Category: <span class="newsGroupName">' + data[i].category +'</span> </div>' +
+                        '</div>'
+                    );
+                }
+                container.append('<div style="clear: both"></div>');
+            });
+
+            $('#SearchResultsBlock').masonry({
+                itemSelector: '.newsSummaryItem',
+                columnWidth: 400
+            });
+        }
+
+        function searchCategory(id)
+        {
+            $.post( 'search' ,{ c: id },function(data)
+            {
+                console.log(data);
+                var container = $('#SearchResultsBlock');
+                container.empty();
+                for(var i = 0;i < data.length; i++)
+                {
+                    container.append(
+                            '<div class="newsSummaryItem">' +
+                                    '<img class="newsImg" src="' + '/NewsShow/web/'+ data[i].imgLink + '"/>' +
+                                    '<div class="newsTitle">' + data[i].title + '</div>' +
+                                    '<div class="newsSum">' + data[i].summary + '</div>' +
+                                    '<div class="newsAuthor">' + data[i].author  + '</div>' +
+                                    '<div class="newsTime">' + data[i].datetime + '</div>' +
+                                    '<div class="newsGroup"> Category: <span class="newsGroupName">' + data[i].category +'</span> </div>' +
+                                    '</div>'
+                    );
+                }
+                container.append('<div style="clear: both"></div>');
+            });
+
+            $('#SearchResultsBlock').masonry({
+                itemSelector: '.newsSummaryItem',
+                columnWidth: 400
+            });
+        }
+
     </script>
 {% endblock %}

@@ -52,7 +52,12 @@ body
 #mainContent
 {
 	margin-top:20px;
-	background-color:#A99A42;
+	/*background-color:#A99A42;*/
+}
+
+#NewsBox
+{
+    background-color:#A99A42;
 }
 
 .newsSummaryItem
@@ -75,6 +80,11 @@ body
 	
 }
 
+#LoginBox
+{
+    background-color:#A99A42;
+}
+
 #loginForm , #signupForm
 {
 	font-family:tahoma;
@@ -88,3 +98,52 @@ body
 	border-left:1px #D9D1BA solid;
 	
 }
+
+#CategoriesBlock
+{
+    background-color:#A99A42;
+    width:395px;
+    float:left;
+}
+
+.categoryItem
+{
+    float:left;
+    height:20px;
+    margin:5px;
+    padding:3px;
+    background-color: #DCD191;
+}
+
+.categoryItem:hover
+{
+    background-color: #786300;
+    cursor:pointer;
+}
+
+#SearchBlock
+{
+    float:left;
+    background-color:#A99A42;
+    height:80px;
+    width:395px;
+    margin-left:10px;
+}
+
+#SearchResultsBlock
+{
+    background-color:#A99A42;
+    margin-top:10px;
+    min-height:200px;
+}
+
+#WriteBox
+{
+    background-color:#A99A42;
+}
+
+#WriteForm
+{
+    padding:10px;
+}
+

@@ -5,7 +5,9 @@ namespace Roozbeh\NewsShowBundle\Controller;
 
 use Symfony\Bundle\FrameworkBundle\Controller\Controller;
 
+use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Response;
 
 use Symfony\Component\Security\Core\SecurityContext;
 
@@ -13,46 +15,27 @@ use Roozbeh\NewsShowBundle\Entity;
 
 use Symfony\Component\Form;
 
-class newsSummary
-{
-    public $title;
-    public $author;
-    public $summary;
-    public $time;
-    public $groupName;
-    public $ImgSrc;
-    function __construct($t,$a,$s,$ti,$gn,$src)
-    {
-        $this->title=$t;
-        $this->author=$a;
-        $this->summary=$s;
-        $this->time=$ti;
-        $this->groupName=$gn;
-        $this->ImgSrc=$src;
-    }
-}
+use Symfony\Component\Serializer\Serializer;
+use Symfony\Component\Serializer\Normalizer\GetSetMethodNormalizer;
+use Symfony\Component\Serializer\Encoder\JsonEncoder;
 
 class DefaultController extends Controller
 {
     public function indexAction()
     {
-        //return $this->render('NewsShowBundle:Default:index.html.twig', array('name' => $name));
         return $this->render('NewsShowBundle:Default:index.html.twig');
     }
 
     public function newsAction()
     {
-        $items[] = new newsSummary('test1','roozbeh1','charand e mozakhraf 1','9:30 1' , 'siasi 1' , 'bundles/newsshow/images/jafang.jpg');
-        $items[] = new newsSummary('test2','roozbeh2','charand e mozakhraf charand e mozakhraf charand e mozakhraf charand e mozakhraf charand e mozakhraf charand e mozakhraf ','9:30 2' , 'siasi 2' , 'bundles/newsshow/images/jafang.jpg');
-        $items[] = new newsSummary('test3','roozbeh3','charand e mozakhraf 3','9:30 3' , 'siasi 3' , 'bundles/newsshow/images/jafang.jpg');
-        $arr = array('newsSumItems' => $items );
+        $news_results = $this->getDoctrine()->getRepository('NewsShowBundle:News')->findAll();
+        $arr = array('newsSumItems' => $news_results );
 
         return $this->render('NewsShowBundle:Default:news.html.twig',$arr);
     }
 
     public function loginAction(Request $request)
     {
-        //$request = $this->getRequest();
         $session = $request->getSession();
 
         if ($request->attributes->has(SecurityContext::AUTHENTICATION_ERROR)) {
@@ -113,11 +96,66 @@ class DefaultController extends Controller
 
     public function searchAction()
     {
-        return $this->render('NewsShowBundle:Default:search.html.twig');
+        if($this->getRequest()->request->has('q'))
+        {
+            $news_results = $this->getDoctrine()->getRepository('NewsShowBundle:News')->findAll();
+
+            return new JsonResponse($news_results);
+        }
+
+        if($this->getRequest()->request->has('c'))
+        {
+            $news_results = $this->getDoctrine()->getRepository('NewsShowBundle:News')->findBy(array('category'=> $this->getRequest()->request->get('c') ));
+            return new JsonResponse($news_results);
+        }
+
+        $categories = $this->getDoctrine()
+            ->getRepository('NewsShowBundle:Category')
+            ->findAll();
+
+        return $this->render('NewsShowBundle:Default:search.html.twig',array('categories' => $categories));
     }
 
-    public function writeAction()
+    public function writeAction(Request $request)
     {
-        return $this->render('NewsShowBundle:Default:write.html.twig');
+        $a = new Entity\News();
+
+        $usr= $this->get('security.context')->getToken()->getUser();
+
+        $cats = $usr->getCategories();
+
+        foreach ($cats as $cat)
+        {
+            $choices[] = $cat->getName();
+        }
+
+        $em = $this->getDoctrine()->getManager();
+
+        $form = $this->createFormBuilder($a)
+            ->add('title', 'text')
+            ->add('summary', 'textarea')
+            ->add('text' ,'textarea')
+            ->add('datetime', 'datetime')
+            //->add('category','choice' , array( 'choices' => $choices ) )
+            ->add('category','entity',array('class'=> 'NewsShowBundle:Category' , 'property' => 'name'))
+            ->add('write', 'submit')
+            ->getForm();
+
+        $form->handleRequest($request);
+
+        if ($form->isValid())
+        {
+            $news = $form->getData();
+            $news->setAuthor($usr);
+            if( $usr->hasCategory( $news->getCategory() ) )
+            {
+                $em->persist($news);
+                $em->flush();
+            }
+            else
+                $form->addError(new Form\formError("Failed. You are not allowed to post in that group."));
+        }
+
+        return $this->render('NewsShowBundle:Default:write.html.twig',array('form'=>$form->createView()));
     }
 }

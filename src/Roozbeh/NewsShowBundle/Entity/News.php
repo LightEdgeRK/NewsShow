@@ -16,7 +16,22 @@ use Doctrine\ORM\Mapping as ORM;
  * @ORM\Entity
  * @ORM\Table(name="News")
  */
-class News {
+class News implements \JsonSerializable{
+
+    public function jsonSerialize() //for summary item only
+    {
+        return array(
+            'ID' => $this->NID,
+            'title'=> $this->title,
+            'summary' => $this->summary,
+            'imgLink' => $this->imgLink,
+            'text' => $this->text,
+            'datetime' => $this->date_time,
+            'category' => $this->category->getName(),
+            'author' => $this->author->getFirstname() . " " . $this->author->getLastname()
+        );
+    }
+
     /**
      * @ORM\Id
      * @ORM\Column(type="integer")
@@ -35,7 +50,7 @@ class News {
     protected $summary;
 
     /**
-     * @ORM\Column(type="string", length=100)
+     * @ORM\Column(type="string", length=100 , nullable=true)
      */
     protected $imgLink;
 

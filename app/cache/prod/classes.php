@@ -62,6 +62,7 @@ public function getMetadataBag();
 namespace Symfony\Component\HttpFoundation\Session\Storage
 {
 use Symfony\Component\HttpFoundation\Session\SessionBagInterface;
+use Symfony\Component\HttpFoundation\Session\Storage\Handler\NativeSessionHandler;
 use Symfony\Component\HttpFoundation\Session\Storage\MetadataBag;
 use Symfony\Component\HttpFoundation\Session\Storage\Proxy\NativeProxy;
 use Symfony\Component\HttpFoundation\Session\Storage\Proxy\AbstractProxy;
@@ -75,7 +76,7 @@ protected $saveHandler;
 protected $metadataBag;
 public function __construct(array $options = array(), $handler = null, MetadataBag $metaBag = null)
 {
-ini_set('session.cache_limiter',''); ini_set('session.use_cookies', 1);
+session_cache_limiter(''); ini_set('session.use_cookies', 1);
 if (version_compare(phpversion(),'5.4.0','>=')) {
 session_register_shutdown();
 } else {
@@ -94,20 +95,21 @@ public function start()
 if ($this->started && !$this->closed) {
 return true;
 }
-if (!$this->started && !$this->closed && $this->saveHandler->isActive()
-&& $this->saveHandler->isSessionHandlerInterface()) {
-$this->loadSession();
-return true;
+if (version_compare(phpversion(),'5.4.0','>=') && \PHP_SESSION_ACTIVE === session_status()) {
+throw new \RuntimeException('Failed to start the session: already started by PHP.');
 }
-if (ini_get('session.use_cookies') && headers_sent()) {
-throw new \RuntimeException('Failed to start the session because headers have already been sent.');
+if (version_compare(phpversion(),'5.4.0','<') && isset($_SESSION) && session_id()) {
+throw new \RuntimeException('Failed to start the session: already started by PHP ($_SESSION is set).');
+}
+if (ini_get('session.use_cookies') && headers_sent($file, $line)) {
+throw new \RuntimeException(sprintf('Failed to start the session because headers have already been sent by "%s" at line %d.', $file, $line));
 }
 if (!session_start()) {
 throw new \RuntimeException('Failed to start the session');
 }
 $this->loadSession();
 if (!$this->saveHandler->isWrapper() && !$this->saveHandler->isSessionHandlerInterface()) {
-$this->saveHandler->setActive(false);
+$this->saveHandler->setActive(true);
 }
 return true;
 }
@@ -142,7 +144,7 @@ return session_regenerate_id($destroy);
 public function save()
 {
 session_write_close();
-if (!$this->saveHandler->isWrapper() && !$this->getSaveHandler()->isSessionHandlerInterface()) {
+if (!$this->saveHandler->isWrapper() && !$this->saveHandler->isSessionHandlerInterface()) {
 $this->saveHandler->setActive(false);
 }
 $this->closed = true;
@@ -198,10 +200,17 @@ ini_set('session.'.$key, $value);
 }
 public function setSaveHandler($saveHandler = null)
 {
+if (!$saveHandler instanceof AbstractProxy &&
+!$saveHandler instanceof NativeSessionHandler &&
+!$saveHandler instanceof \SessionHandlerInterface &&
+null !== $saveHandler) {
+throw new \InvalidArgumentException('Must be instance of AbstractProxy or NativeSessionHandler; implement \SessionHandlerInterface; or be null.');
+}
 if (!$saveHandler instanceof AbstractProxy && $saveHandler instanceof \SessionHandlerInterface) {
 $saveHandler = new SessionHandlerProxy($saveHandler);
 } elseif (!$saveHandler instanceof AbstractProxy) {
-$saveHandler = new NativeProxy();
+$saveHandler = version_compare(phpversion(),'5.4.0','>=') ?
+new SessionHandlerProxy(new \SessionHandler()) : new NativeProxy();
 }
 $this->saveHandler = $saveHandler;
 if ($this->saveHandler instanceof \SessionHandlerInterface) {
@@ -232,6 +241,38 @@ $bag->initialize($session[$key]);
 }
 $this->started = true;
 $this->closed = false;
+}
+}
+}
+namespace Symfony\Component\HttpFoundation\Session\Storage
+{
+use Symfony\Component\HttpFoundation\Session\Storage\MetadataBag;
+use Symfony\Component\HttpFoundation\Session\Storage\Proxy\AbstractProxy;
+use Symfony\Component\HttpFoundation\Session\Storage\Handler\NativeSessionHandler;
+class PhpBridgeSessionStorage extends NativeSessionStorage
+{
+public function __construct($handler = null, MetadataBag $metaBag = null)
+{
+$this->setMetadataBag($metaBag);
+$this->setSaveHandler($handler);
+}
+public function start()
+{
+if ($this->started && !$this->closed) {
+return true;
+}
+$this->loadSession();
+if (!$this->saveHandler->isWrapper() && !$this->saveHandler->isSessionHandlerInterface()) {
+$this->saveHandler->setActive(true);
+}
+return true;
+}
+public function clear()
+{
+foreach ($this->bags as $bag) {
+$bag->clear();
+}
+$this->loadSession();
 }
 }
 }
@@ -288,10 +329,16 @@ return $this->wrapper;
 }
 public function isActive()
 {
+if (version_compare(phpversion(),'5.4.0','>=')) {
+return $this->active = \PHP_SESSION_ACTIVE === session_status();
+}
 return $this->active;
 }
 public function setActive($flag)
 {
+if (version_compare(phpversion(),'5.4.0','>=')) {
+throw new \LogicException('This method is disabled in PHP 5.4.0+');
+}
 $this->active = (bool) $flag;
 }
 public function getId()
@@ -499,55 +546,6 @@ public function getFlashBag()
 {
 return $this->getBag($this->flashName);
 }
-public function getFlashes()
-{
-trigger_error('getFlashes() is deprecated since version 2.1 and will be removed in 2.3. Use the FlashBag instead.', E_USER_DEPRECATED);
-$all = $this->getBag($this->flashName)->all();
-$return = array();
-if ($all) {
-foreach ($all as $name => $array) {
-if (is_numeric(key($array))) {
-$return[$name] = reset($array);
-} else {
-$return[$name] = $array;
-}
-}
-}
-return $return;
-}
-public function setFlashes($values)
-{
-trigger_error('setFlashes() is deprecated since version 2.1 and will be removed in 2.3. Use the FlashBag instead.', E_USER_DEPRECATED);
-foreach ($values as $name => $value) {
-$this->getBag($this->flashName)->set($name, $value);
-}
-}
-public function getFlash($name, $default = null)
-{
-trigger_error('getFlash() is deprecated since version 2.1 and will be removed in 2.3. Use the FlashBag instead.', E_USER_DEPRECATED);
-$return = $this->getBag($this->flashName)->get($name);
-return empty($return) ? $default : reset($return);
-}
-public function setFlash($name, $value)
-{
-trigger_error('setFlash() is deprecated since version 2.1 and will be removed in 2.3. Use the FlashBag instead.', E_USER_DEPRECATED);
-$this->getBag($this->flashName)->set($name, $value);
-}
-public function hasFlash($name)
-{
-trigger_error('hasFlash() is deprecated since version 2.1 and will be removed in 2.3. Use the FlashBag instead.', E_USER_DEPRECATED);
-return $this->getBag($this->flashName)->has($name);
-}
-public function removeFlash($name)
-{
-trigger_error('removeFlash() is deprecated since version 2.1 and will be removed in 2.3. Use the FlashBag instead.', E_USER_DEPRECATED);
-$this->getBag($this->flashName)->get($name);
-}
-public function clearFlashes()
-{
-trigger_error('clearFlashes() is deprecated since version 2.1 and will be removed in 2.3. Use the FlashBag instead.', E_USER_DEPRECATED);
-return $this->getBag($this->flashName)->clear();
-}
 }
 }
 namespace Symfony\Bundle\FrameworkBundle\Templating
@@ -715,17 +713,10 @@ $name = str_replace(':/',':', preg_replace('#/{2,}#','/', strtr($name,'\\','/'))
 if (false !== strpos($name,'..')) {
 throw new \RuntimeException(sprintf('Template name "%s" contains invalid characters.', $name));
 }
-$parts = explode(':', $name);
-if (3 !== count($parts)) {
+if (!preg_match('/^([^:]*):([^:]*):(.+)\.([^\.]+)\.([^\.]+)$/', $name, $matches)) {
 throw new \InvalidArgumentException(sprintf('Template name "%s" is not valid (format is "bundle:section:template.format.engine").', $name));
 }
-$elements = explode('.', $parts[2]);
-if (3 > count($elements)) {
-throw new \InvalidArgumentException(sprintf('Template name "%s" is not valid (format is "bundle:section:template.format.engine").', $name));
-}
-$engine = array_pop($elements);
-$format = array_pop($elements);
-$template = new TemplateReference($parts[0], $parts[1], implode('.', $elements), $format, $engine);
+$template = new TemplateReference($matches[1], $matches[2], $matches[3], $matches[4], $matches[5]);
 if ($template->get('bundle')) {
 try {
 $this->kernel->getBundle($template->get('bundle'));
@@ -893,9 +884,9 @@ $url ='/';
 $url = strtr(rawurlencode($url), $this->decodedChars);
 $url = strtr($url, array('/../'=>'/%2E%2E/','/./'=>'/%2E/'));
 if ('/..'=== substr($url, -3)) {
-$url = substr($url, 0, -2) .'%2E%2E';
+$url = substr($url, 0, -2).'%2E%2E';
 } elseif ('/.'=== substr($url, -2)) {
-$url = substr($url, 0, -1) .'%2E';
+$url = substr($url, 0, -1).'%2E';
 }
 $schemeAuthority ='';
 if ($host = $this->context->getHost()) {
@@ -969,7 +960,7 @@ break;
 }
 }
 $targetDirs[] = $targetFile;
-$path = str_repeat('../', count($sourceDirs)) . implode('/', $targetDirs);
+$path = str_repeat('../', count($sourceDirs)).implode('/', $targetDirs);
 return''=== $path ||'/'=== $path[0]
 || false !== ($colonPos = strpos($path,':')) && ($colonPos < ($slashPos = strpos($path,'/')) || false === $slashPos)
 ? "./$path" : $path;
@@ -988,8 +979,9 @@ private $host;
 private $scheme;
 private $httpPort;
 private $httpsPort;
+private $queryString;
 private $parameters = array();
-public function __construct($baseUrl ='', $method ='GET', $host ='localhost', $scheme ='http', $httpPort = 80, $httpsPort = 443, $path ='/')
+public function __construct($baseUrl ='', $method ='GET', $host ='localhost', $scheme ='http', $httpPort = 80, $httpsPort = 443, $path ='/', $queryString ='')
 {
 $this->baseUrl = $baseUrl;
 $this->method = strtoupper($method);
@@ -998,6 +990,7 @@ $this->scheme = strtolower($scheme);
 $this->httpPort = $httpPort;
 $this->httpsPort = $httpsPort;
 $this->pathInfo = $path;
+$this->queryString = $queryString;
 }
 public function fromRequest(Request $request)
 {
@@ -1008,6 +1001,7 @@ $this->setHost($request->getHost());
 $this->setScheme($request->getScheme());
 $this->setHttpPort($request->isSecure() ? $this->httpPort : $request->getPort());
 $this->setHttpsPort($request->isSecure() ? $request->getPort() : $this->httpsPort);
+$this->setQueryString($request->server->get('QUERY_STRING'));
 }
 public function getBaseUrl()
 {
@@ -1064,6 +1058,14 @@ return $this->httpsPort;
 public function setHttpsPort($httpsPort)
 {
 $this->httpsPort = $httpsPort;
+}
+public function getQueryString()
+{
+return $this->queryString;
+}
+public function setQueryString($queryString)
+{
+$this->queryString = $queryString;
 }
 public function getParameters()
 {
@@ -1146,7 +1148,7 @@ $invalid[] = $key;
 }
 }
 if ($invalid) {
-throw new \InvalidArgumentException(sprintf('The Router does not support the following options: "%s".', implode('\', \'', $invalid)));
+throw new \InvalidArgumentException(sprintf('The Router does not support the following options: "%s".', implode('", "', $invalid)));
 }
 }
 public function setOption($key, $value)
@@ -1468,1743 +1470,6 @@ $value)
 );
 }, $value);
 return str_replace('%%','%', $escapedValue);
-}
-}
-}
-namespace Symfony\Component\HttpFoundation
-{
-class ParameterBag implements \IteratorAggregate, \Countable
-{
-protected $parameters;
-public function __construct(array $parameters = array())
-{
-$this->parameters = $parameters;
-}
-public function all()
-{
-return $this->parameters;
-}
-public function keys()
-{
-return array_keys($this->parameters);
-}
-public function replace(array $parameters = array())
-{
-$this->parameters = $parameters;
-}
-public function add(array $parameters = array())
-{
-$this->parameters = array_replace($this->parameters, $parameters);
-}
-public function get($path, $default = null, $deep = false)
-{
-if (!$deep || false === $pos = strpos($path,'[')) {
-return array_key_exists($path, $this->parameters) ? $this->parameters[$path] : $default;
-}
-$root = substr($path, 0, $pos);
-if (!array_key_exists($root, $this->parameters)) {
-return $default;
-}
-$value = $this->parameters[$root];
-$currentKey = null;
-for ($i = $pos, $c = strlen($path); $i < $c; $i++) {
-$char = $path[$i];
-if ('['=== $char) {
-if (null !== $currentKey) {
-throw new \InvalidArgumentException(sprintf('Malformed path. Unexpected "[" at position %d.', $i));
-}
-$currentKey ='';
-} elseif (']'=== $char) {
-if (null === $currentKey) {
-throw new \InvalidArgumentException(sprintf('Malformed path. Unexpected "]" at position %d.', $i));
-}
-if (!is_array($value) || !array_key_exists($currentKey, $value)) {
-return $default;
-}
-$value = $value[$currentKey];
-$currentKey = null;
-} else {
-if (null === $currentKey) {
-throw new \InvalidArgumentException(sprintf('Malformed path. Unexpected "%s" at position %d.', $char, $i));
-}
-$currentKey .= $char;
-}
-}
-if (null !== $currentKey) {
-throw new \InvalidArgumentException(sprintf('Malformed path. Path must end with "]".'));
-}
-return $value;
-}
-public function set($key, $value)
-{
-$this->parameters[$key] = $value;
-}
-public function has($key)
-{
-return array_key_exists($key, $this->parameters);
-}
-public function remove($key)
-{
-unset($this->parameters[$key]);
-}
-public function getAlpha($key, $default ='', $deep = false)
-{
-return preg_replace('/[^[:alpha:]]/','', $this->get($key, $default, $deep));
-}
-public function getAlnum($key, $default ='', $deep = false)
-{
-return preg_replace('/[^[:alnum:]]/','', $this->get($key, $default, $deep));
-}
-public function getDigits($key, $default ='', $deep = false)
-{
-return str_replace(array('-','+'),'', $this->filter($key, $default, $deep, FILTER_SANITIZE_NUMBER_INT));
-}
-public function getInt($key, $default = 0, $deep = false)
-{
-return (int) $this->get($key, $default, $deep);
-}
-public function filter($key, $default = null, $deep = false, $filter=FILTER_DEFAULT, $options=array())
-{
-$value = $this->get($key, $default, $deep);
-if (!is_array($options) && $options) {
-$options = array('flags'=> $options);
-}
-if (is_array($value) && !isset($options['flags'])) {
-$options['flags'] = FILTER_REQUIRE_ARRAY;
-}
-return filter_var($value, $filter, $options);
-}
-public function getIterator()
-{
-return new \ArrayIterator($this->parameters);
-}
-public function count()
-{
-return count($this->parameters);
-}
-}
-}
-namespace Symfony\Component\HttpFoundation
-{
-class HeaderBag implements \IteratorAggregate, \Countable
-{
-protected $headers;
-protected $cacheControl;
-public function __construct(array $headers = array())
-{
-$this->cacheControl = array();
-$this->headers = array();
-foreach ($headers as $key => $values) {
-$this->set($key, $values);
-}
-}
-public function __toString()
-{
-if (!$this->headers) {
-return'';
-}
-$max = max(array_map('strlen', array_keys($this->headers))) + 1;
-$content ='';
-ksort($this->headers);
-foreach ($this->headers as $name => $values) {
-$name = implode('-', array_map('ucfirst', explode('-', $name)));
-foreach ($values as $value) {
-$content .= sprintf("%-{$max}s %s\r\n", $name.':', $value);
-}
-}
-return $content;
-}
-public function all()
-{
-return $this->headers;
-}
-public function keys()
-{
-return array_keys($this->headers);
-}
-public function replace(array $headers = array())
-{
-$this->headers = array();
-$this->add($headers);
-}
-public function add(array $headers)
-{
-foreach ($headers as $key => $values) {
-$this->set($key, $values);
-}
-}
-public function get($key, $default = null, $first = true)
-{
-$key = strtr(strtolower($key),'_','-');
-if (!array_key_exists($key, $this->headers)) {
-if (null === $default) {
-return $first ? null : array();
-}
-return $first ? $default : array($default);
-}
-if ($first) {
-return count($this->headers[$key]) ? $this->headers[$key][0] : $default;
-}
-return $this->headers[$key];
-}
-public function set($key, $values, $replace = true)
-{
-$key = strtr(strtolower($key),'_','-');
-$values = array_values((array) $values);
-if (true === $replace || !isset($this->headers[$key])) {
-$this->headers[$key] = $values;
-} else {
-$this->headers[$key] = array_merge($this->headers[$key], $values);
-}
-if ('cache-control'=== $key) {
-$this->cacheControl = $this->parseCacheControl($values[0]);
-}
-}
-public function has($key)
-{
-return array_key_exists(strtr(strtolower($key),'_','-'), $this->headers);
-}
-public function contains($key, $value)
-{
-return in_array($value, $this->get($key, null, false));
-}
-public function remove($key)
-{
-$key = strtr(strtolower($key),'_','-');
-unset($this->headers[$key]);
-if ('cache-control'=== $key) {
-$this->cacheControl = array();
-}
-}
-public function getDate($key, \DateTime $default = null)
-{
-if (null === $value = $this->get($key)) {
-return $default;
-}
-if (false === $date = \DateTime::createFromFormat(DATE_RFC2822, $value)) {
-throw new \RuntimeException(sprintf('The %s HTTP header is not parseable (%s).', $key, $value));
-}
-return $date;
-}
-public function addCacheControlDirective($key, $value = true)
-{
-$this->cacheControl[$key] = $value;
-$this->set('Cache-Control', $this->getCacheControlHeader());
-}
-public function hasCacheControlDirective($key)
-{
-return array_key_exists($key, $this->cacheControl);
-}
-public function getCacheControlDirective($key)
-{
-return array_key_exists($key, $this->cacheControl) ? $this->cacheControl[$key] : null;
-}
-public function removeCacheControlDirective($key)
-{
-unset($this->cacheControl[$key]);
-$this->set('Cache-Control', $this->getCacheControlHeader());
-}
-public function getIterator()
-{
-return new \ArrayIterator($this->headers);
-}
-public function count()
-{
-return count($this->headers);
-}
-protected function getCacheControlHeader()
-{
-$parts = array();
-ksort($this->cacheControl);
-foreach ($this->cacheControl as $key => $value) {
-if (true === $value) {
-$parts[] = $key;
-} else {
-if (preg_match('#[^a-zA-Z0-9._-]#', $value)) {
-$value ='"'.$value.'"';
-}
-$parts[] = "$key=$value";
-}
-}
-return implode(', ', $parts);
-}
-protected function parseCacheControl($header)
-{
-$cacheControl = array();
-preg_match_all('#([a-zA-Z][a-zA-Z_-]*)\s*(?:=(?:"([^"]*)"|([^ \t",;]*)))?#', $header, $matches, PREG_SET_ORDER);
-foreach ($matches as $match) {
-$cacheControl[strtolower($match[1])] = isset($match[3]) ? $match[3] : (isset($match[2]) ? $match[2] : true);
-}
-return $cacheControl;
-}
-}
-}
-namespace Symfony\Component\HttpFoundation
-{
-use Symfony\Component\HttpFoundation\File\UploadedFile;
-class FileBag extends ParameterBag
-{
-private static $fileKeys = array('error','name','size','tmp_name','type');
-public function __construct(array $parameters = array())
-{
-$this->replace($parameters);
-}
-public function replace(array $files = array())
-{
-$this->parameters = array();
-$this->add($files);
-}
-public function set($key, $value)
-{
-if (!is_array($value) && !$value instanceof UploadedFile) {
-throw new \InvalidArgumentException('An uploaded file must be an array or an instance of UploadedFile.');
-}
-parent::set($key, $this->convertFileInformation($value));
-}
-public function add(array $files = array())
-{
-foreach ($files as $key => $file) {
-$this->set($key, $file);
-}
-}
-protected function convertFileInformation($file)
-{
-if ($file instanceof UploadedFile) {
-return $file;
-}
-$file = $this->fixPhpFilesArray($file);
-if (is_array($file)) {
-$keys = array_keys($file);
-sort($keys);
-if ($keys == self::$fileKeys) {
-if (UPLOAD_ERR_NO_FILE == $file['error']) {
-$file = null;
-} else {
-$file = new UploadedFile($file['tmp_name'], $file['name'], $file['type'], $file['size'], $file['error']);
-}
-} else {
-$file = array_map(array($this,'convertFileInformation'), $file);
-}
-}
-return $file;
-}
-protected function fixPhpFilesArray($data)
-{
-if (!is_array($data)) {
-return $data;
-}
-$keys = array_keys($data);
-sort($keys);
-if (self::$fileKeys != $keys || !isset($data['name']) || !is_array($data['name'])) {
-return $data;
-}
-$files = $data;
-foreach (self::$fileKeys as $k) {
-unset($files[$k]);
-}
-foreach (array_keys($data['name']) as $key) {
-$files[$key] = $this->fixPhpFilesArray(array('error'=> $data['error'][$key],'name'=> $data['name'][$key],'type'=> $data['type'][$key],'tmp_name'=> $data['tmp_name'][$key],'size'=> $data['size'][$key]
-));
-}
-return $files;
-}
-}
-}
-namespace Symfony\Component\HttpFoundation
-{
-class ServerBag extends ParameterBag
-{
-public function getHeaders()
-{
-$headers = array();
-foreach ($this->parameters as $key => $value) {
-if (0 === strpos($key,'HTTP_')) {
-$headers[substr($key, 5)] = $value;
-}
-elseif (in_array($key, array('CONTENT_LENGTH','CONTENT_MD5','CONTENT_TYPE'))) {
-$headers[$key] = $value;
-}
-}
-if (isset($this->parameters['PHP_AUTH_USER'])) {
-$headers['PHP_AUTH_USER'] = $this->parameters['PHP_AUTH_USER'];
-$headers['PHP_AUTH_PW'] = isset($this->parameters['PHP_AUTH_PW']) ? $this->parameters['PHP_AUTH_PW'] :'';
-} else {
-$authorizationHeader = null;
-if (isset($this->parameters['HTTP_AUTHORIZATION'])) {
-$authorizationHeader = $this->parameters['HTTP_AUTHORIZATION'];
-} elseif (isset($this->parameters['REDIRECT_HTTP_AUTHORIZATION'])) {
-$authorizationHeader = $this->parameters['REDIRECT_HTTP_AUTHORIZATION'];
-}
-if ((null !== $authorizationHeader) && (0 === stripos($authorizationHeader,'basic'))) {
-$exploded = explode(':', base64_decode(substr($authorizationHeader, 6)));
-if (count($exploded) == 2) {
-list($headers['PHP_AUTH_USER'], $headers['PHP_AUTH_PW']) = $exploded;
-}
-}
-}
-if (isset($headers['PHP_AUTH_USER'])) {
-$headers['AUTHORIZATION'] ='Basic '.base64_encode($headers['PHP_AUTH_USER'].':'.$headers['PHP_AUTH_PW']);
-}
-return $headers;
-}
-}
-}
-namespace Symfony\Component\HttpFoundation
-{
-use Symfony\Component\HttpFoundation\Session\SessionInterface;
-class Request
-{
-const HEADER_CLIENT_IP ='client_ip';
-const HEADER_CLIENT_HOST ='client_host';
-const HEADER_CLIENT_PROTO ='client_proto';
-const HEADER_CLIENT_PORT ='client_port';
-protected static $trustProxy = false;
-protected static $trustedProxies = array();
-protected static $trustedHeaders = array(
-self::HEADER_CLIENT_IP =>'X_FORWARDED_FOR',
-self::HEADER_CLIENT_HOST =>'X_FORWARDED_HOST',
-self::HEADER_CLIENT_PROTO =>'X_FORWARDED_PROTO',
-self::HEADER_CLIENT_PORT =>'X_FORWARDED_PORT',
-);
-protected static $httpMethodParameterOverride = false;
-public $attributes;
-public $request;
-public $query;
-public $server;
-public $files;
-public $cookies;
-public $headers;
-protected $content;
-protected $languages;
-protected $charsets;
-protected $acceptableContentTypes;
-protected $pathInfo;
-protected $requestUri;
-protected $baseUrl;
-protected $basePath;
-protected $method;
-protected $format;
-protected $session;
-protected $locale;
-protected $defaultLocale ='en';
-protected static $formats;
-public function __construct(array $query = array(), array $request = array(), array $attributes = array(), array $cookies = array(), array $files = array(), array $server = array(), $content = null)
-{
-$this->initialize($query, $request, $attributes, $cookies, $files, $server, $content);
-}
-public function initialize(array $query = array(), array $request = array(), array $attributes = array(), array $cookies = array(), array $files = array(), array $server = array(), $content = null)
-{
-$this->request = new ParameterBag($request);
-$this->query = new ParameterBag($query);
-$this->attributes = new ParameterBag($attributes);
-$this->cookies = new ParameterBag($cookies);
-$this->files = new FileBag($files);
-$this->server = new ServerBag($server);
-$this->headers = new HeaderBag($this->server->getHeaders());
-$this->content = $content;
-$this->languages = null;
-$this->charsets = null;
-$this->acceptableContentTypes = null;
-$this->pathInfo = null;
-$this->requestUri = null;
-$this->baseUrl = null;
-$this->basePath = null;
-$this->method = null;
-$this->format = null;
-}
-public static function createFromGlobals()
-{
-$request = new static($_GET, $_POST, array(), $_COOKIE, $_FILES, $_SERVER);
-if (0 === strpos($request->headers->get('CONTENT_TYPE'),'application/x-www-form-urlencoded')
-&& in_array(strtoupper($request->server->get('REQUEST_METHOD','GET')), array('PUT','DELETE','PATCH'))
-) {
-parse_str($request->getContent(), $data);
-$request->request = new ParameterBag($data);
-}
-return $request;
-}
-public static function create($uri, $method ='GET', $parameters = array(), $cookies = array(), $files = array(), $server = array(), $content = null)
-{
-$server = array_replace(array('SERVER_NAME'=>'localhost','SERVER_PORT'=> 80,'HTTP_HOST'=>'localhost','HTTP_USER_AGENT'=>'Symfony/2.X','HTTP_ACCEPT'=>'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8','HTTP_ACCEPT_LANGUAGE'=>'en-us,en;q=0.5','HTTP_ACCEPT_CHARSET'=>'ISO-8859-1,utf-8;q=0.7,*;q=0.7','REMOTE_ADDR'=>'127.0.0.1','SCRIPT_NAME'=>'','SCRIPT_FILENAME'=>'','SERVER_PROTOCOL'=>'HTTP/1.1','REQUEST_TIME'=> time(),
-), $server);
-$server['PATH_INFO'] ='';
-$server['REQUEST_METHOD'] = strtoupper($method);
-$components = parse_url($uri);
-if (isset($components['host'])) {
-$server['SERVER_NAME'] = $components['host'];
-$server['HTTP_HOST'] = $components['host'];
-}
-if (isset($components['scheme'])) {
-if ('https'=== $components['scheme']) {
-$server['HTTPS'] ='on';
-$server['SERVER_PORT'] = 443;
-} else {
-unset($server['HTTPS']);
-$server['SERVER_PORT'] = 80;
-}
-}
-if (isset($components['port'])) {
-$server['SERVER_PORT'] = $components['port'];
-$server['HTTP_HOST'] = $server['HTTP_HOST'].':'.$components['port'];
-}
-if (isset($components['user'])) {
-$server['PHP_AUTH_USER'] = $components['user'];
-}
-if (isset($components['pass'])) {
-$server['PHP_AUTH_PW'] = $components['pass'];
-}
-if (!isset($components['path'])) {
-$components['path'] ='/';
-}
-switch (strtoupper($method)) {
-case'POST':
-case'PUT':
-case'DELETE':
-if (!isset($server['CONTENT_TYPE'])) {
-$server['CONTENT_TYPE'] ='application/x-www-form-urlencoded';
-}
-case'PATCH':
-$request = $parameters;
-$query = array();
-break;
-default:
-$request = array();
-$query = $parameters;
-break;
-}
-if (isset($components['query'])) {
-parse_str(html_entity_decode($components['query']), $qs);
-$query = array_replace($qs, $query);
-}
-$queryString = http_build_query($query,'','&');
-$server['REQUEST_URI'] = $components['path'].(''!== $queryString ?'?'.$queryString :'');
-$server['QUERY_STRING'] = $queryString;
-return new static($query, $request, array(), $cookies, $files, $server, $content);
-}
-public function duplicate(array $query = null, array $request = null, array $attributes = null, array $cookies = null, array $files = null, array $server = null)
-{
-$dup = clone $this;
-if ($query !== null) {
-$dup->query = new ParameterBag($query);
-}
-if ($request !== null) {
-$dup->request = new ParameterBag($request);
-}
-if ($attributes !== null) {
-$dup->attributes = new ParameterBag($attributes);
-}
-if ($cookies !== null) {
-$dup->cookies = new ParameterBag($cookies);
-}
-if ($files !== null) {
-$dup->files = new FileBag($files);
-}
-if ($server !== null) {
-$dup->server = new ServerBag($server);
-$dup->headers = new HeaderBag($dup->server->getHeaders());
-}
-$dup->languages = null;
-$dup->charsets = null;
-$dup->acceptableContentTypes = null;
-$dup->pathInfo = null;
-$dup->requestUri = null;
-$dup->baseUrl = null;
-$dup->basePath = null;
-$dup->method = null;
-$dup->format = null;
-return $dup;
-}
-public function __clone()
-{
-$this->query = clone $this->query;
-$this->request = clone $this->request;
-$this->attributes = clone $this->attributes;
-$this->cookies = clone $this->cookies;
-$this->files = clone $this->files;
-$this->server = clone $this->server;
-$this->headers = clone $this->headers;
-}
-public function __toString()
-{
-return
-sprintf('%s %s %s', $this->getMethod(), $this->getRequestUri(), $this->server->get('SERVER_PROTOCOL'))."\r\n".
-$this->headers."\r\n".
-$this->getContent();
-}
-public function overrideGlobals()
-{
-$_GET = $this->query->all();
-$_POST = $this->request->all();
-$_SERVER = $this->server->all();
-$_COOKIE = $this->cookies->all();
-foreach ($this->headers->all() as $key => $value) {
-$key = strtoupper(str_replace('-','_', $key));
-if (in_array($key, array('CONTENT_TYPE','CONTENT_LENGTH'))) {
-$_SERVER[$key] = implode(', ', $value);
-} else {
-$_SERVER['HTTP_'.$key] = implode(', ', $value);
-}
-}
-$request = array('g'=> $_GET,'p'=> $_POST,'c'=> $_COOKIE);
-$requestOrder = ini_get('request_order') ?: ini_get('variable_order');
-$requestOrder = preg_replace('#[^cgp]#','', strtolower($requestOrder)) ?:'gp';
-$_REQUEST = array();
-foreach (str_split($requestOrder) as $order) {
-$_REQUEST = array_merge($_REQUEST, $request[$order]);
-}
-}
-public static function trustProxyData()
-{
-trigger_error('trustProxyData() is deprecated since version 2.0 and will be removed in 2.3. Use setTrustedProxies() instead.', E_USER_DEPRECATED);
-self::$trustProxy = true;
-}
-public static function setTrustedProxies(array $proxies)
-{
-self::$trustedProxies = $proxies;
-self::$trustProxy = $proxies ? true : false;
-}
-public static function getTrustedProxies()
-{
-return self::$trustedProxies;
-}
-public static function setTrustedHeaderName($key, $value)
-{
-if (!array_key_exists($key, self::$trustedHeaders)) {
-throw new \InvalidArgumentException(sprintf('Unable to set the trusted header name for key "%s".', $key));
-}
-self::$trustedHeaders[$key] = $value;
-}
-public static function isProxyTrusted()
-{
-return self::$trustProxy;
-}
-public static function normalizeQueryString($qs)
-{
-if (''== $qs) {
-return'';
-}
-$parts = array();
-$order = array();
-foreach (explode('&', $qs) as $param) {
-if (''=== $param ||'='=== $param[0]) {
-continue;
-}
-$keyValuePair = explode('=', $param, 2);
-$parts[] = isset($keyValuePair[1]) ?
-rawurlencode(urldecode($keyValuePair[0])).'='.rawurlencode(urldecode($keyValuePair[1])) :
-rawurlencode(urldecode($keyValuePair[0]));
-$order[] = urldecode($keyValuePair[0]);
-}
-array_multisort($order, SORT_ASC, $parts);
-return implode('&', $parts);
-}
-public static function enableHttpMethodParameterOverride()
-{
-self::$httpMethodParameterOverride = true;
-}
-public static function getHttpMethodParameterOverride()
-{
-return self::$httpMethodParameterOverride;
-}
-public function get($key, $default = null, $deep = false)
-{
-return $this->query->get($key, $this->attributes->get($key, $this->request->get($key, $default, $deep), $deep), $deep);
-}
-public function getSession()
-{
-return $this->session;
-}
-public function hasPreviousSession()
-{
-return $this->hasSession() && $this->cookies->has($this->session->getName());
-}
-public function hasSession()
-{
-return null !== $this->session;
-}
-public function setSession(SessionInterface $session)
-{
-$this->session = $session;
-}
-public function getClientIp()
-{
-$ip = $this->server->get('REMOTE_ADDR');
-if (!self::$trustProxy) {
-return $ip;
-}
-if (!self::$trustedHeaders[self::HEADER_CLIENT_IP] || !$this->headers->has(self::$trustedHeaders[self::HEADER_CLIENT_IP])) {
-return $ip;
-}
-$clientIps = array_map('trim', explode(',', $this->headers->get(self::$trustedHeaders[self::HEADER_CLIENT_IP])));
-$clientIps[] = $ip;
-$trustedProxies = self::$trustProxy && !self::$trustedProxies ? array($ip) : self::$trustedProxies;
-$clientIps = array_diff($clientIps, $trustedProxies);
-return array_pop($clientIps);
-}
-public function getScriptName()
-{
-return $this->server->get('SCRIPT_NAME', $this->server->get('ORIG_SCRIPT_NAME',''));
-}
-public function getPathInfo()
-{
-if (null === $this->pathInfo) {
-$this->pathInfo = $this->preparePathInfo();
-}
-return $this->pathInfo;
-}
-public function getBasePath()
-{
-if (null === $this->basePath) {
-$this->basePath = $this->prepareBasePath();
-}
-return $this->basePath;
-}
-public function getBaseUrl()
-{
-if (null === $this->baseUrl) {
-$this->baseUrl = $this->prepareBaseUrl();
-}
-return $this->baseUrl;
-}
-public function getScheme()
-{
-return $this->isSecure() ?'https':'http';
-}
-public function getPort()
-{
-if (self::$trustProxy && self::$trustedHeaders[self::HEADER_CLIENT_PORT] && $port = $this->headers->get(self::$trustedHeaders[self::HEADER_CLIENT_PORT])) {
-return $port;
-}
-return $this->server->get('SERVER_PORT');
-}
-public function getUser()
-{
-return $this->server->get('PHP_AUTH_USER');
-}
-public function getPassword()
-{
-return $this->server->get('PHP_AUTH_PW');
-}
-public function getUserInfo()
-{
-$userinfo = $this->getUser();
-$pass = $this->getPassword();
-if (''!= $pass) {
-$userinfo .= ":$pass";
-}
-return $userinfo;
-}
-public function getHttpHost()
-{
-$scheme = $this->getScheme();
-$port = $this->getPort();
-if (('http'== $scheme && $port == 80) || ('https'== $scheme && $port == 443)) {
-return $this->getHost();
-}
-return $this->getHost().':'.$port;
-}
-public function getRequestUri()
-{
-if (null === $this->requestUri) {
-$this->requestUri = $this->prepareRequestUri();
-}
-return $this->requestUri;
-}
-public function getSchemeAndHttpHost()
-{
-return $this->getScheme().'://'.$this->getHttpHost();
-}
-public function getUri()
-{
-if (null !== $qs = $this->getQueryString()) {
-$qs ='?'.$qs;
-}
-return $this->getSchemeAndHttpHost().$this->getBaseUrl().$this->getPathInfo().$qs;
-}
-public function getUriForPath($path)
-{
-return $this->getSchemeAndHttpHost().$this->getBaseUrl().$path;
-}
-public function getQueryString()
-{
-$qs = static::normalizeQueryString($this->server->get('QUERY_STRING'));
-return''=== $qs ? null : $qs;
-}
-public function isSecure()
-{
-if (self::$trustProxy && self::$trustedHeaders[self::HEADER_CLIENT_PROTO] && $proto = $this->headers->get(self::$trustedHeaders[self::HEADER_CLIENT_PROTO])) {
-return in_array(strtolower($proto), array('https','on','1'));
-}
-return'on'== strtolower($this->server->get('HTTPS')) || 1 == $this->server->get('HTTPS');
-}
-public function getHost()
-{
-if (self::$trustProxy && self::$trustedHeaders[self::HEADER_CLIENT_HOST] && $host = $this->headers->get(self::$trustedHeaders[self::HEADER_CLIENT_HOST])) {
-$elements = explode(',', $host);
-$host = $elements[count($elements) - 1];
-} elseif (!$host = $this->headers->get('HOST')) {
-if (!$host = $this->server->get('SERVER_NAME')) {
-$host = $this->server->get('SERVER_ADDR','');
-}
-}
-$host = strtolower(preg_replace('/:\d+$/','', trim($host)));
-if ($host && !preg_match('/^\[?(?:[a-zA-Z0-9-:\]_]+\.?)+$/', $host)) {
-throw new \UnexpectedValueException('Invalid Host');
-}
-return $host;
-}
-public function setMethod($method)
-{
-$this->method = null;
-$this->server->set('REQUEST_METHOD', $method);
-}
-public function getMethod()
-{
-if (null === $this->method) {
-$this->method = strtoupper($this->server->get('REQUEST_METHOD','GET'));
-if ('POST'=== $this->method) {
-if ($method = $this->headers->get('X-HTTP-METHOD-OVERRIDE')) {
-$this->method = strtoupper($method);
-} elseif (self::$httpMethodParameterOverride) {
-$this->method = strtoupper($this->request->get('_method', $this->query->get('_method','POST')));
-}
-}
-}
-return $this->method;
-}
-public function getRealMethod()
-{
-return strtoupper($this->server->get('REQUEST_METHOD','GET'));
-}
-public function getMimeType($format)
-{
-if (null === static::$formats) {
-static::initializeFormats();
-}
-return isset(static::$formats[$format]) ? static::$formats[$format][0] : null;
-}
-public function getFormat($mimeType)
-{
-if (false !== $pos = strpos($mimeType,';')) {
-$mimeType = substr($mimeType, 0, $pos);
-}
-if (null === static::$formats) {
-static::initializeFormats();
-}
-foreach (static::$formats as $format => $mimeTypes) {
-if (in_array($mimeType, (array) $mimeTypes)) {
-return $format;
-}
-}
-return null;
-}
-public function setFormat($format, $mimeTypes)
-{
-if (null === static::$formats) {
-static::initializeFormats();
-}
-static::$formats[$format] = is_array($mimeTypes) ? $mimeTypes : array($mimeTypes);
-}
-public function getRequestFormat($default ='html')
-{
-if (null === $this->format) {
-$this->format = $this->get('_format', $default);
-}
-return $this->format;
-}
-public function setRequestFormat($format)
-{
-$this->format = $format;
-}
-public function getContentType()
-{
-return $this->getFormat($this->headers->get('CONTENT_TYPE'));
-}
-public function setDefaultLocale($locale)
-{
-$this->defaultLocale = $locale;
-if (null === $this->locale) {
-$this->setPhpDefaultLocale($locale);
-}
-}
-public function setLocale($locale)
-{
-$this->setPhpDefaultLocale($this->locale = $locale);
-}
-public function getLocale()
-{
-return null === $this->locale ? $this->defaultLocale : $this->locale;
-}
-public function isMethod($method)
-{
-return $this->getMethod() === strtoupper($method);
-}
-public function isMethodSafe()
-{
-return in_array($this->getMethod(), array('GET','HEAD'));
-}
-public function getContent($asResource = false)
-{
-if (false === $this->content || (true === $asResource && null !== $this->content)) {
-throw new \LogicException('getContent() can only be called once when using the resource return type.');
-}
-if (true === $asResource) {
-$this->content = false;
-return fopen('php://input','rb');
-}
-if (null === $this->content) {
-$this->content = file_get_contents('php://input');
-}
-return $this->content;
-}
-public function getETags()
-{
-return preg_split('/\s*,\s*/', $this->headers->get('if_none_match'), null, PREG_SPLIT_NO_EMPTY);
-}
-public function isNoCache()
-{
-return $this->headers->hasCacheControlDirective('no-cache') ||'no-cache'== $this->headers->get('Pragma');
-}
-public function getPreferredLanguage(array $locales = null)
-{
-$preferredLanguages = $this->getLanguages();
-if (empty($locales)) {
-return isset($preferredLanguages[0]) ? $preferredLanguages[0] : null;
-}
-if (!$preferredLanguages) {
-return $locales[0];
-}
-$extendedPreferredLanguages = array();
-foreach ($preferredLanguages as $language) {
-$extendedPreferredLanguages[] = $language;
-if (false !== $position = strpos($language,'_')) {
-$superLanguage = substr($language, 0, $position);
-if (!in_array($superLanguage, $preferredLanguages)) {
-$extendedPreferredLanguages[] = $superLanguage;
-}
-}
-}
-$preferredLanguages = array_values(array_intersect($extendedPreferredLanguages, $locales));
-return isset($preferredLanguages[0]) ? $preferredLanguages[0] : $locales[0];
-}
-public function getLanguages()
-{
-if (null !== $this->languages) {
-return $this->languages;
-}
-$languages = AcceptHeader::fromString($this->headers->get('Accept-Language'))->all();
-$this->languages = array();
-foreach (array_keys($languages) as $lang) {
-if (strstr($lang,'-')) {
-$codes = explode('-', $lang);
-if ($codes[0] =='i') {
-if (count($codes) > 1) {
-$lang = $codes[1];
-}
-} else {
-for ($i = 0, $max = count($codes); $i < $max; $i++) {
-if ($i == 0) {
-$lang = strtolower($codes[0]);
-} else {
-$lang .='_'.strtoupper($codes[$i]);
-}
-}
-}
-}
-$this->languages[] = $lang;
-}
-return $this->languages;
-}
-public function getCharsets()
-{
-if (null !== $this->charsets) {
-return $this->charsets;
-}
-return $this->charsets = array_keys(AcceptHeader::fromString($this->headers->get('Accept-Charset'))->all());
-}
-public function getAcceptableContentTypes()
-{
-if (null !== $this->acceptableContentTypes) {
-return $this->acceptableContentTypes;
-}
-return $this->acceptableContentTypes = array_keys(AcceptHeader::fromString($this->headers->get('Accept'))->all());
-}
-public function isXmlHttpRequest()
-{
-return'XMLHttpRequest'== $this->headers->get('X-Requested-With');
-}
-public function splitHttpAcceptHeader($header)
-{
-trigger_error('splitHttpAcceptHeader() is deprecated since version 2.2 and will be removed in 2.3.', E_USER_DEPRECATED);
-$headers = array();
-foreach (AcceptHeader::fromString($header)->all() as $item) {
-$key = $item->getValue();
-foreach ($item->getAttributes() as $name => $value) {
-$key .= sprintf(';%s=%s', $name, $value);
-}
-$headers[$key] = $item->getQuality();
-}
-return $headers;
-}
-protected function prepareRequestUri()
-{
-$requestUri ='';
-if ($this->headers->has('X_ORIGINAL_URL') && false !== stripos(PHP_OS,'WIN')) {
-$requestUri = $this->headers->get('X_ORIGINAL_URL');
-$this->headers->remove('X_ORIGINAL_URL');
-} elseif ($this->headers->has('X_REWRITE_URL') && false !== stripos(PHP_OS,'WIN')) {
-$requestUri = $this->headers->get('X_REWRITE_URL');
-$this->headers->remove('X_REWRITE_URL');
-} elseif ($this->server->get('IIS_WasUrlRewritten') =='1'&& $this->server->get('UNENCODED_URL') !='') {
-$requestUri = $this->server->get('UNENCODED_URL');
-$this->server->remove('UNENCODED_URL');
-$this->server->remove('IIS_WasUrlRewritten');
-} elseif ($this->server->has('REQUEST_URI')) {
-$requestUri = $this->server->get('REQUEST_URI');
-$schemeAndHttpHost = $this->getSchemeAndHttpHost();
-if (strpos($requestUri, $schemeAndHttpHost) === 0) {
-$requestUri = substr($requestUri, strlen($schemeAndHttpHost));
-}
-} elseif ($this->server->has('ORIG_PATH_INFO')) {
-$requestUri = $this->server->get('ORIG_PATH_INFO');
-if (''!= $this->server->get('QUERY_STRING')) {
-$requestUri .='?'.$this->server->get('QUERY_STRING');
-}
-$this->server->remove('ORIG_PATH_INFO');
-}
-$this->server->set('REQUEST_URI', $requestUri);
-return $requestUri;
-}
-protected function prepareBaseUrl()
-{
-$filename = basename($this->server->get('SCRIPT_FILENAME'));
-if (basename($this->server->get('SCRIPT_NAME')) === $filename) {
-$baseUrl = $this->server->get('SCRIPT_NAME');
-} elseif (basename($this->server->get('PHP_SELF')) === $filename) {
-$baseUrl = $this->server->get('PHP_SELF');
-} elseif (basename($this->server->get('ORIG_SCRIPT_NAME')) === $filename) {
-$baseUrl = $this->server->get('ORIG_SCRIPT_NAME'); } else {
-$path = $this->server->get('PHP_SELF','');
-$file = $this->server->get('SCRIPT_FILENAME','');
-$segs = explode('/', trim($file,'/'));
-$segs = array_reverse($segs);
-$index = 0;
-$last = count($segs);
-$baseUrl ='';
-do {
-$seg = $segs[$index];
-$baseUrl ='/'.$seg.$baseUrl;
-++$index;
-} while (($last > $index) && (false !== ($pos = strpos($path, $baseUrl))) && (0 != $pos));
-}
-$requestUri = $this->getRequestUri();
-if ($baseUrl && false !== $prefix = $this->getUrlencodedPrefix($requestUri, $baseUrl)) {
-return $prefix;
-}
-if ($baseUrl && false !== $prefix = $this->getUrlencodedPrefix($requestUri, dirname($baseUrl))) {
-return rtrim($prefix,'/');
-}
-$truncatedRequestUri = $requestUri;
-if (($pos = strpos($requestUri,'?')) !== false) {
-$truncatedRequestUri = substr($requestUri, 0, $pos);
-}
-$basename = basename($baseUrl);
-if (empty($basename) || !strpos(rawurldecode($truncatedRequestUri), $basename)) {
-return'';
-}
-if ((strlen($requestUri) >= strlen($baseUrl)) && ((false !== ($pos = strpos($requestUri, $baseUrl))) && ($pos !== 0))) {
-$baseUrl = substr($requestUri, 0, $pos + strlen($baseUrl));
-}
-return rtrim($baseUrl,'/');
-}
-protected function prepareBasePath()
-{
-$filename = basename($this->server->get('SCRIPT_FILENAME'));
-$baseUrl = $this->getBaseUrl();
-if (empty($baseUrl)) {
-return'';
-}
-if (basename($baseUrl) === $filename) {
-$basePath = dirname($baseUrl);
-} else {
-$basePath = $baseUrl;
-}
-if ('\\'=== DIRECTORY_SEPARATOR) {
-$basePath = str_replace('\\','/', $basePath);
-}
-return rtrim($basePath,'/');
-}
-protected function preparePathInfo()
-{
-$baseUrl = $this->getBaseUrl();
-if (null === ($requestUri = $this->getRequestUri())) {
-return'/';
-}
-$pathInfo ='/';
-if ($pos = strpos($requestUri,'?')) {
-$requestUri = substr($requestUri, 0, $pos);
-}
-if ((null !== $baseUrl) && (false === ($pathInfo = substr($requestUri, strlen($baseUrl))))) {
-return'/';
-} elseif (null === $baseUrl) {
-return $requestUri;
-}
-return (string) $pathInfo;
-}
-protected static function initializeFormats()
-{
-static::$formats = array('html'=> array('text/html','application/xhtml+xml'),'txt'=> array('text/plain'),'js'=> array('application/javascript','application/x-javascript','text/javascript'),'css'=> array('text/css'),'json'=> array('application/json','application/x-json'),'xml'=> array('text/xml','application/xml','application/x-xml'),'rdf'=> array('application/rdf+xml'),'atom'=> array('application/atom+xml'),'rss'=> array('application/rss+xml'),
-);
-}
-private function setPhpDefaultLocale($locale)
-{
-try {
-if (class_exists('Locale', false)) {
-\Locale::setDefault($locale);
-}
-} catch (\Exception $e) {
-}
-}
-private function getUrlencodedPrefix($string, $prefix)
-{
-if (0 !== strpos(rawurldecode($string), $prefix)) {
-return false;
-}
-$len = strlen($prefix);
-if (preg_match("#^(%[[:xdigit:]]{2}|.){{$len}}#", $string, $match)) {
-return $match[0];
-}
-return false;
-}
-}
-}
-namespace Symfony\Component\HttpFoundation
-{
-class Response
-{
-public $headers;
-protected $content;
-protected $version;
-protected $statusCode;
-protected $statusText;
-protected $charset;
-public static $statusTexts = array(
-100 =>'Continue',
-101 =>'Switching Protocols',
-102 =>'Processing', 200 =>'OK',
-201 =>'Created',
-202 =>'Accepted',
-203 =>'Non-Authoritative Information',
-204 =>'No Content',
-205 =>'Reset Content',
-206 =>'Partial Content',
-207 =>'Multi-Status', 208 =>'Already Reported', 226 =>'IM Used', 300 =>'Multiple Choices',
-301 =>'Moved Permanently',
-302 =>'Found',
-303 =>'See Other',
-304 =>'Not Modified',
-305 =>'Use Proxy',
-306 =>'Reserved',
-307 =>'Temporary Redirect',
-308 =>'Permanent Redirect', 400 =>'Bad Request',
-401 =>'Unauthorized',
-402 =>'Payment Required',
-403 =>'Forbidden',
-404 =>'Not Found',
-405 =>'Method Not Allowed',
-406 =>'Not Acceptable',
-407 =>'Proxy Authentication Required',
-408 =>'Request Timeout',
-409 =>'Conflict',
-410 =>'Gone',
-411 =>'Length Required',
-412 =>'Precondition Failed',
-413 =>'Request Entity Too Large',
-414 =>'Request-URI Too Long',
-415 =>'Unsupported Media Type',
-416 =>'Requested Range Not Satisfiable',
-417 =>'Expectation Failed',
-418 =>'I\'m a teapot', 422 =>'Unprocessable Entity', 423 =>'Locked', 424 =>'Failed Dependency', 425 =>'Reserved for WebDAV advanced collections expired proposal', 426 =>'Upgrade Required', 428 =>'Precondition Required', 429 =>'Too Many Requests', 431 =>'Request Header Fields Too Large', 500 =>'Internal Server Error',
-501 =>'Not Implemented',
-502 =>'Bad Gateway',
-503 =>'Service Unavailable',
-504 =>'Gateway Timeout',
-505 =>'HTTP Version Not Supported',
-506 =>'Variant Also Negotiates (Experimental)', 507 =>'Insufficient Storage', 508 =>'Loop Detected', 510 =>'Not Extended', 511 =>'Network Authentication Required', );
-public function __construct($content ='', $status = 200, $headers = array())
-{
-$this->headers = new ResponseHeaderBag($headers);
-$this->setContent($content);
-$this->setStatusCode($status);
-$this->setProtocolVersion('1.0');
-if (!$this->headers->has('Date')) {
-$this->setDate(new \DateTime(null, new \DateTimeZone('UTC')));
-}
-}
-public static function create($content ='', $status = 200, $headers = array())
-{
-return new static($content, $status, $headers);
-}
-public function __toString()
-{
-return
-sprintf('HTTP/%s %s %s', $this->version, $this->statusCode, $this->statusText)."\r\n".
-$this->headers."\r\n".
-$this->getContent();
-}
-public function __clone()
-{
-$this->headers = clone $this->headers;
-}
-public function prepare(Request $request)
-{
-$headers = $this->headers;
-if ($this->isInformational() || in_array($this->statusCode, array(204, 304))) {
-$this->setContent(null);
-}
-if (!$headers->has('Content-Type')) {
-$format = $request->getRequestFormat();
-if (null !== $format && $mimeType = $request->getMimeType($format)) {
-$headers->set('Content-Type', $mimeType);
-}
-}
-$charset = $this->charset ?:'UTF-8';
-if (!$headers->has('Content-Type')) {
-$headers->set('Content-Type','text/html; charset='.$charset);
-} elseif (0 === strpos($headers->get('Content-Type'),'text/') && false === strpos($headers->get('Content-Type'),'charset')) {
-$headers->set('Content-Type', $headers->get('Content-Type').'; charset='.$charset);
-}
-if ($headers->has('Transfer-Encoding')) {
-$headers->remove('Content-Length');
-}
-if ($request->isMethod('HEAD')) {
-$length = $headers->get('Content-Length');
-$this->setContent(null);
-if ($length) {
-$headers->set('Content-Length', $length);
-}
-}
-if ('HTTP/1.0'!= $request->server->get('SERVER_PROTOCOL')) {
-$this->setProtocolVersion('1.1');
-}
-if ('1.0'== $this->getProtocolVersion() &&'no-cache'== $this->headers->get('Cache-Control')) {
-$this->headers->set('pragma','no-cache');
-$this->headers->set('expires', -1);
-}
-if (false !== stripos($this->headers->get('Content-Disposition'),'attachment') && preg_match('/MSIE (.*?);/i', $request->server->get('HTTP_USER_AGENT'), $match) == 1 && true === $request->isSecure()) {
-if (intval(preg_replace("/(MSIE )(.*?);/","$2", $match[0])) < 9) {
-$this->headers->remove('Cache-Control');
-}
-}
-return $this;
-}
-public function sendHeaders()
-{
-if (headers_sent()) {
-return $this;
-}
-header(sprintf('HTTP/%s %s %s', $this->version, $this->statusCode, $this->statusText));
-foreach ($this->headers->allPreserveCase() as $name => $values) {
-foreach ($values as $value) {
-header($name.': '.$value, false);
-}
-}
-foreach ($this->headers->getCookies() as $cookie) {
-setcookie($cookie->getName(), $cookie->getValue(), $cookie->getExpiresTime(), $cookie->getPath(), $cookie->getDomain(), $cookie->isSecure(), $cookie->isHttpOnly());
-}
-return $this;
-}
-public function sendContent()
-{
-echo $this->content;
-return $this;
-}
-public function send()
-{
-$this->sendHeaders();
-$this->sendContent();
-if (function_exists('fastcgi_finish_request')) {
-fastcgi_finish_request();
-} elseif ('cli'!== PHP_SAPI) {
-$previous = null;
-$obStatus = ob_get_status(1);
-while (($level = ob_get_level()) > 0 && $level !== $previous) {
-$previous = $level;
-if ($obStatus[$level - 1] && isset($obStatus[$level - 1]['del']) && $obStatus[$level - 1]['del']) {
-ob_end_flush();
-}
-}
-flush();
-}
-return $this;
-}
-public function setContent($content)
-{
-if (null !== $content && !is_string($content) && !is_numeric($content) && !is_callable(array($content,'__toString'))) {
-throw new \UnexpectedValueException('The Response content must be a string or object implementing __toString(), "'.gettype($content).'" given.');
-}
-$this->content = (string) $content;
-return $this;
-}
-public function getContent()
-{
-return $this->content;
-}
-public function setProtocolVersion($version)
-{
-$this->version = $version;
-return $this;
-}
-public function getProtocolVersion()
-{
-return $this->version;
-}
-public function setStatusCode($code, $text = null)
-{
-$this->statusCode = $code = (int) $code;
-if ($this->isInvalid()) {
-throw new \InvalidArgumentException(sprintf('The HTTP status code "%s" is not valid.', $code));
-}
-if (null === $text) {
-$this->statusText = isset(self::$statusTexts[$code]) ? self::$statusTexts[$code] :'';
-return $this;
-}
-if (false === $text) {
-$this->statusText ='';
-return $this;
-}
-$this->statusText = $text;
-return $this;
-}
-public function getStatusCode()
-{
-return $this->statusCode;
-}
-public function setCharset($charset)
-{
-$this->charset = $charset;
-return $this;
-}
-public function getCharset()
-{
-return $this->charset;
-}
-public function isCacheable()
-{
-if (!in_array($this->statusCode, array(200, 203, 300, 301, 302, 404, 410))) {
-return false;
-}
-if ($this->headers->hasCacheControlDirective('no-store') || $this->headers->getCacheControlDirective('private')) {
-return false;
-}
-return $this->isValidateable() || $this->isFresh();
-}
-public function isFresh()
-{
-return $this->getTtl() > 0;
-}
-public function isValidateable()
-{
-return $this->headers->has('Last-Modified') || $this->headers->has('ETag');
-}
-public function setPrivate()
-{
-$this->headers->removeCacheControlDirective('public');
-$this->headers->addCacheControlDirective('private');
-return $this;
-}
-public function setPublic()
-{
-$this->headers->addCacheControlDirective('public');
-$this->headers->removeCacheControlDirective('private');
-return $this;
-}
-public function mustRevalidate()
-{
-return $this->headers->hasCacheControlDirective('must-revalidate') || $this->headers->has('proxy-revalidate');
-}
-public function getDate()
-{
-return $this->headers->getDate('Date', new \DateTime());
-}
-public function setDate(\DateTime $date)
-{
-$date->setTimezone(new \DateTimeZone('UTC'));
-$this->headers->set('Date', $date->format('D, d M Y H:i:s').' GMT');
-return $this;
-}
-public function getAge()
-{
-if (null !== $age = $this->headers->get('Age')) {
-return (int) $age;
-}
-return max(time() - $this->getDate()->format('U'), 0);
-}
-public function expire()
-{
-if ($this->isFresh()) {
-$this->headers->set('Age', $this->getMaxAge());
-}
-return $this;
-}
-public function getExpires()
-{
-try {
-return $this->headers->getDate('Expires');
-} catch (\RuntimeException $e) {
-return \DateTime::createFromFormat(DATE_RFC2822,'Sat, 01 Jan 00 00:00:00 +0000');
-}
-}
-public function setExpires(\DateTime $date = null)
-{
-if (null === $date) {
-$this->headers->remove('Expires');
-} else {
-$date = clone $date;
-$date->setTimezone(new \DateTimeZone('UTC'));
-$this->headers->set('Expires', $date->format('D, d M Y H:i:s').' GMT');
-}
-return $this;
-}
-public function getMaxAge()
-{
-if ($this->headers->hasCacheControlDirective('s-maxage')) {
-return (int) $this->headers->getCacheControlDirective('s-maxage');
-}
-if ($this->headers->hasCacheControlDirective('max-age')) {
-return (int) $this->headers->getCacheControlDirective('max-age');
-}
-if (null !== $this->getExpires()) {
-return $this->getExpires()->format('U') - $this->getDate()->format('U');
-}
-return null;
-}
-public function setMaxAge($value)
-{
-$this->headers->addCacheControlDirective('max-age', $value);
-return $this;
-}
-public function setSharedMaxAge($value)
-{
-$this->setPublic();
-$this->headers->addCacheControlDirective('s-maxage', $value);
-return $this;
-}
-public function getTtl()
-{
-if (null !== $maxAge = $this->getMaxAge()) {
-return $maxAge - $this->getAge();
-}
-return null;
-}
-public function setTtl($seconds)
-{
-$this->setSharedMaxAge($this->getAge() + $seconds);
-return $this;
-}
-public function setClientTtl($seconds)
-{
-$this->setMaxAge($this->getAge() + $seconds);
-return $this;
-}
-public function getLastModified()
-{
-return $this->headers->getDate('Last-Modified');
-}
-public function setLastModified(\DateTime $date = null)
-{
-if (null === $date) {
-$this->headers->remove('Last-Modified');
-} else {
-$date = clone $date;
-$date->setTimezone(new \DateTimeZone('UTC'));
-$this->headers->set('Last-Modified', $date->format('D, d M Y H:i:s').' GMT');
-}
-return $this;
-}
-public function getEtag()
-{
-return $this->headers->get('ETag');
-}
-public function setEtag($etag = null, $weak = false)
-{
-if (null === $etag) {
-$this->headers->remove('Etag');
-} else {
-if (0 !== strpos($etag,'"')) {
-$etag ='"'.$etag.'"';
-}
-$this->headers->set('ETag', (true === $weak ?'W/':'').$etag);
-}
-return $this;
-}
-public function setCache(array $options)
-{
-if ($diff = array_diff(array_keys($options), array('etag','last_modified','max_age','s_maxage','private','public'))) {
-throw new \InvalidArgumentException(sprintf('Response does not support the following options: "%s".', implode('", "', array_values($diff))));
-}
-if (isset($options['etag'])) {
-$this->setEtag($options['etag']);
-}
-if (isset($options['last_modified'])) {
-$this->setLastModified($options['last_modified']);
-}
-if (isset($options['max_age'])) {
-$this->setMaxAge($options['max_age']);
-}
-if (isset($options['s_maxage'])) {
-$this->setSharedMaxAge($options['s_maxage']);
-}
-if (isset($options['public'])) {
-if ($options['public']) {
-$this->setPublic();
-} else {
-$this->setPrivate();
-}
-}
-if (isset($options['private'])) {
-if ($options['private']) {
-$this->setPrivate();
-} else {
-$this->setPublic();
-}
-}
-return $this;
-}
-public function setNotModified()
-{
-$this->setStatusCode(304);
-$this->setContent(null);
-foreach (array('Allow','Content-Encoding','Content-Language','Content-Length','Content-MD5','Content-Type','Last-Modified') as $header) {
-$this->headers->remove($header);
-}
-return $this;
-}
-public function hasVary()
-{
-return null !== $this->headers->get('Vary');
-}
-public function getVary()
-{
-if (!$vary = $this->headers->get('Vary')) {
-return array();
-}
-return is_array($vary) ? $vary : preg_split('/[\s,]+/', $vary);
-}
-public function setVary($headers, $replace = true)
-{
-$this->headers->set('Vary', $headers, $replace);
-return $this;
-}
-public function isNotModified(Request $request)
-{
-if (!$request->isMethodSafe()) {
-return false;
-}
-$lastModified = $request->headers->get('If-Modified-Since');
-$notModified = false;
-if ($etags = $request->getEtags()) {
-$notModified = (in_array($this->getEtag(), $etags) || in_array('*', $etags)) && (!$lastModified || $this->headers->get('Last-Modified') == $lastModified);
-} elseif ($lastModified) {
-$notModified = $lastModified == $this->headers->get('Last-Modified');
-}
-if ($notModified) {
-$this->setNotModified();
-}
-return $notModified;
-}
-public function isInvalid()
-{
-return $this->statusCode < 100 || $this->statusCode >= 600;
-}
-public function isInformational()
-{
-return $this->statusCode >= 100 && $this->statusCode < 200;
-}
-public function isSuccessful()
-{
-return $this->statusCode >= 200 && $this->statusCode < 300;
-}
-public function isRedirection()
-{
-return $this->statusCode >= 300 && $this->statusCode < 400;
-}
-public function isClientError()
-{
-return $this->statusCode >= 400 && $this->statusCode < 500;
-}
-public function isServerError()
-{
-return $this->statusCode >= 500 && $this->statusCode < 600;
-}
-public function isOk()
-{
-return 200 === $this->statusCode;
-}
-public function isForbidden()
-{
-return 403 === $this->statusCode;
-}
-public function isNotFound()
-{
-return 404 === $this->statusCode;
-}
-public function isRedirect($location = null)
-{
-return in_array($this->statusCode, array(201, 301, 302, 303, 307, 308)) && (null === $location ?: $location == $this->headers->get('Location'));
-}
-public function isEmpty()
-{
-return in_array($this->statusCode, array(201, 204, 304));
-}
-}
-}
-namespace Symfony\Component\HttpFoundation
-{
-class ResponseHeaderBag extends HeaderBag
-{
-const COOKIES_FLAT ='flat';
-const COOKIES_ARRAY ='array';
-const DISPOSITION_ATTACHMENT ='attachment';
-const DISPOSITION_INLINE ='inline';
-protected $computedCacheControl = array();
-protected $cookies = array();
-protected $headerNames = array();
-public function __construct(array $headers = array())
-{
-parent::__construct($headers);
-if (!isset($this->headers['cache-control'])) {
-$this->set('Cache-Control','');
-}
-}
-public function __toString()
-{
-$cookies ='';
-foreach ($this->getCookies() as $cookie) {
-$cookies .='Set-Cookie: '.$cookie."\r\n";
-}
-ksort($this->headerNames);
-return parent::__toString().$cookies;
-}
-public function allPreserveCase()
-{
-return array_combine($this->headerNames, $this->headers);
-}
-public function replace(array $headers = array())
-{
-$this->headerNames = array();
-parent::replace($headers);
-if (!isset($this->headers['cache-control'])) {
-$this->set('Cache-Control','');
-}
-}
-public function set($key, $values, $replace = true)
-{
-parent::set($key, $values, $replace);
-$uniqueKey = strtr(strtolower($key),'_','-');
-$this->headerNames[$uniqueKey] = $key;
-if (in_array($uniqueKey, array('cache-control','etag','last-modified','expires'))) {
-$computed = $this->computeCacheControlValue();
-$this->headers['cache-control'] = array($computed);
-$this->headerNames['cache-control'] ='Cache-Control';
-$this->computedCacheControl = $this->parseCacheControl($computed);
-}
-}
-public function remove($key)
-{
-parent::remove($key);
-$uniqueKey = strtr(strtolower($key),'_','-');
-unset($this->headerNames[$uniqueKey]);
-if ('cache-control'=== $uniqueKey) {
-$this->computedCacheControl = array();
-}
-}
-public function hasCacheControlDirective($key)
-{
-return array_key_exists($key, $this->computedCacheControl);
-}
-public function getCacheControlDirective($key)
-{
-return array_key_exists($key, $this->computedCacheControl) ? $this->computedCacheControl[$key] : null;
-}
-public function setCookie(Cookie $cookie)
-{
-$this->cookies[$cookie->getDomain()][$cookie->getPath()][$cookie->getName()] = $cookie;
-}
-public function removeCookie($name, $path ='/', $domain = null)
-{
-if (null === $path) {
-$path ='/';
-}
-unset($this->cookies[$domain][$path][$name]);
-if (empty($this->cookies[$domain][$path])) {
-unset($this->cookies[$domain][$path]);
-if (empty($this->cookies[$domain])) {
-unset($this->cookies[$domain]);
-}
-}
-}
-public function getCookies($format = self::COOKIES_FLAT)
-{
-if (!in_array($format, array(self::COOKIES_FLAT, self::COOKIES_ARRAY))) {
-throw new \InvalidArgumentException(sprintf('Format "%s" invalid (%s).', $format, implode(', ', array(self::COOKIES_FLAT, self::COOKIES_ARRAY))));
-}
-if (self::COOKIES_ARRAY === $format) {
-return $this->cookies;
-}
-$flattenedCookies = array();
-foreach ($this->cookies as $path) {
-foreach ($path as $cookies) {
-foreach ($cookies as $cookie) {
-$flattenedCookies[] = $cookie;
-}
-}
-}
-return $flattenedCookies;
-}
-public function clearCookie($name, $path ='/', $domain = null)
-{
-$this->setCookie(new Cookie($name, null, 1, $path, $domain));
-}
-public function makeDisposition($disposition, $filename, $filenameFallback ='')
-{
-if (!in_array($disposition, array(self::DISPOSITION_ATTACHMENT, self::DISPOSITION_INLINE))) {
-throw new \InvalidArgumentException(sprintf('The disposition must be either "%s" or "%s".', self::DISPOSITION_ATTACHMENT, self::DISPOSITION_INLINE));
-}
-if (''== $filenameFallback) {
-$filenameFallback = $filename;
-}
-if (!preg_match('/^[\x20-\x7e]*$/', $filenameFallback)) {
-throw new \InvalidArgumentException('The filename fallback must only contain ASCII characters.');
-}
-if (false !== strpos($filenameFallback,'%')) {
-throw new \InvalidArgumentException('The filename fallback cannot contain the "%" character.');
-}
-if (false !== strpos($filename,'/') || false !== strpos($filename,'\\') || false !== strpos($filenameFallback,'/') || false !== strpos($filenameFallback,'\\')) {
-throw new \InvalidArgumentException('The filename and the fallback cannot contain the "/" and "\\" characters.');
-}
-$output = sprintf('%s; filename="%s"', $disposition, str_replace('"','\\"', $filenameFallback));
-if ($filename !== $filenameFallback) {
-$output .= sprintf("; filename*=utf-8''%s", rawurlencode($filename));
-}
-return $output;
-}
-protected function computeCacheControlValue()
-{
-if (!$this->cacheControl && !$this->has('ETag') && !$this->has('Last-Modified') && !$this->has('Expires')) {
-return'no-cache';
-}
-if (!$this->cacheControl) {
-return'private, must-revalidate';
-}
-$header = $this->getCacheControlHeader();
-if (isset($this->cacheControl['public']) || isset($this->cacheControl['private'])) {
-return $header;
-}
-if (!isset($this->cacheControl['s-maxage'])) {
-return $header.', private';
-}
-return $header;
 }
 }
 }
@@ -3555,11 +1820,13 @@ use Symfony\Component\Routing\Matcher\RequestMatcherInterface;
 use Symfony\Component\Routing\RequestContext;
 use Symfony\Component\Routing\RequestContextAwareInterface;
 use Symfony\Component\EventDispatcher\EventSubscriberInterface;
+use Symfony\Component\HttpFoundation\Request;
 class RouterListener implements EventSubscriberInterface
 {
 private $matcher;
 private $context;
 private $logger;
+private $request;
 public function __construct($matcher, RequestContext $context = null, LoggerInterface $logger = null)
 {
 if (!$matcher instanceof UrlMatcherInterface && !$matcher instanceof RequestMatcherInterface) {
@@ -3572,10 +1839,17 @@ $this->matcher = $matcher;
 $this->context = $context ?: $matcher->getContext();
 $this->logger = $logger;
 }
+public function setRequest(Request $request = null)
+{
+if (null !== $request && $this->request !== $request) {
+$this->context->fromRequest($request);
+}
+$this->request = $request;
+}
 public function onKernelRequest(GetResponseEvent $event)
 {
 $request = $event->getRequest();
-$this->context->fromRequest($request);
+$this->setRequest($request);
 if ($request->attributes->has('_controller')) {
 return;
 }
@@ -3654,11 +1928,11 @@ return new $controller;
 return $controller;
 }
 }
-list($controller, $method) = $this->createController($controller);
-if (!method_exists($controller, $method)) {
-throw new \InvalidArgumentException(sprintf('Method "%s::%s" does not exist.', get_class($controller), $method));
+$callable = $this->createController($controller);
+if (!is_callable($callable)) {
+throw new \InvalidArgumentException(sprintf('The controller for URI "%s" is not callable.', $request->getPathInfo()));
 }
-return array($controller, $method);
+return $callable;
 }
 public function getArguments(Request $request, $controller)
 {
@@ -3901,8 +2175,10 @@ private $path;
 public function __construct(KernelInterface $kernel, $path = null, array $paths = array())
 {
 $this->kernel = $kernel;
+if (null !== $path) {
 $this->path = $path;
 $paths[] = $path;
+}
 parent::__construct($paths);
 }
 public function locate($file, $currentPath = null, $first = true)
@@ -3927,7 +2203,7 @@ $this->kernel = $kernel;
 public function parse($controller)
 {
 if (3 != count($parts = explode(':', $controller))) {
-throw new \InvalidArgumentException(sprintf('The "%s" controller is not a valid a:b:c controller string.', $controller));
+throw new \InvalidArgumentException(sprintf('The "%s" controller is not a valid "a:b:c" controller string.', $controller));
 }
 list($bundle, $controller, $action) = $parts;
 $controller = str_replace('/','\\', $controller);
@@ -3944,6 +2220,22 @@ if (count($bundles) > 1) {
 $msg = sprintf('Unable to find controller "%s:%s" in bundles %s.', $bundle, $controller, implode(', ', $bundles));
 }
 throw new \InvalidArgumentException($msg);
+}
+public function build($controller)
+{
+if (0 === preg_match('#^(.*?\\\\Controller\\\\(.+)Controller)::(.+)Action$#', $controller, $match)) {
+throw new \InvalidArgumentException(sprintf('The "%s" controller is not a valid "class::method" string.', $controller));
+}
+$className = $match[1];
+$controllerName = $match[2];
+$actionName = $match[3];
+foreach ($this->kernel->getBundles() as $name => $bundle) {
+if (0 !== strpos($className, $bundle->getNamespace())) {
+continue;
+}
+return sprintf('%s:%s:%s', $name, $controllerName, $actionName);
+}
+throw new \InvalidArgumentException(sprintf('Unable to find a bundle that defines controller "%s".', $controller));
 }
 }
 }
@@ -3991,6 +2283,36 @@ return array($controller, $method);
 }
 namespace Symfony\Component\Security\Http
 {
+use Symfony\Component\HttpFoundation\Request;
+interface AccessMapInterface
+{
+public function getPatterns(Request $request);
+}
+}
+namespace Symfony\Component\Security\Http
+{
+use Symfony\Component\HttpFoundation\RequestMatcherInterface;
+use Symfony\Component\HttpFoundation\Request;
+class AccessMap implements AccessMapInterface
+{
+private $map = array();
+public function add(RequestMatcherInterface $requestMatcher, array $roles = array(), $channel = null)
+{
+$this->map[] = array($requestMatcher, $roles, $channel);
+}
+public function getPatterns(Request $request)
+{
+foreach ($this->map as $elements) {
+if (null === $elements[0] || $elements[0]->matches($request)) {
+return array($elements[1], $elements[2]);
+}
+}
+return array(null, null);
+}
+}
+}
+namespace Symfony\Component\Security\Http
+{
 use Symfony\Component\HttpKernel\HttpKernelInterface;
 use Symfony\Component\HttpKernel\KernelEvents;
 use Symfony\Component\HttpKernel\Event\GetResponseEvent;
@@ -4015,7 +2337,7 @@ if (null !== $exception) {
 $exception->register($this->dispatcher);
 }
 foreach ($listeners as $listener) {
-$response = $listener->handle($event);
+$listener->handle($event);
 if ($event->hasResponse()) {
 break;
 }
@@ -4373,14 +2695,14 @@ class RequestMatcher implements RequestMatcherInterface
 private $path;
 private $host;
 private $methods = array();
-private $ip;
+private $ips = array();
 private $attributes = array();
-public function __construct($path = null, $host = null, $methods = null, $ip = null, array $attributes = array())
+public function __construct($path = null, $host = null, $methods = null, $ips = null, array $attributes = array())
 {
 $this->matchPath($path);
 $this->matchHost($host);
 $this->matchMethod($methods);
-$this->matchIp($ip);
+$this->matchIps($ips);
 foreach ($attributes as $k => $v) {
 $this->matchAttribute($k, $v);
 }
@@ -4395,7 +2717,11 @@ $this->path = $regexp;
 }
 public function matchIp($ip)
 {
-$this->ip = $ip;
+$this->matchIps($ip);
+}
+public function matchIps($ips)
+{
+$this->ips = (array) $ips;
 }
 public function matchMethod($method)
 {
@@ -4411,23 +2737,20 @@ if ($this->methods && !in_array($request->getMethod(), $this->methods)) {
 return false;
 }
 foreach ($this->attributes as $key => $pattern) {
-if (!preg_match('#'.str_replace('#','\\#', $pattern).'#', $request->attributes->get($key))) {
+if (!preg_match('{'.$pattern.'}', $request->attributes->get($key))) {
 return false;
 }
 }
-if (null !== $this->path) {
-$path = str_replace('#','\\#', $this->path);
-if (!preg_match('#'.$path.'#', rawurldecode($request->getPathInfo()))) {
+if (null !== $this->path && !preg_match('{'.$this->path.'}', rawurldecode($request->getPathInfo()))) {
 return false;
 }
-}
-if (null !== $this->host && !preg_match('#'.str_replace('#','\\#', $this->host).'#i', $request->getHost())) {
+if (null !== $this->host && !preg_match('{'.$this->host.'}i', $request->getHost())) {
 return false;
 }
-if (null !== $this->ip && !IpUtils::checkIp($request->getClientIp(), $this->ip)) {
-return false;
-}
+if (IpUtils::checkIp($request->getClientIp(), $this->ips)) {
 return true;
+}
+return count($this->ips) === 0;
 }
 }
 }
@@ -4435,7 +2758,7 @@ namespace
 {
 class Twig_Environment
 {
-const VERSION ='1.12.2';
+const VERSION ='1.13.0';
 protected $charset;
 protected $loader;
 protected $debug;
@@ -4470,7 +2793,7 @@ $this->setLoader($loader);
 $options = array_merge(array('debug'=> false,'charset'=>'UTF-8','base_template_class'=>'Twig_Template','strict_variables'=> false,'autoescape'=>'html','cache'=> false,'auto_reload'=> null,'optimizations'=> -1,
 ), $options);
 $this->debug = (bool) $options['debug'];
-$this->charset = $options['charset'];
+$this->charset = strtoupper($options['charset']);
 $this->baseTemplateClass = $options['base_template_class'];
 $this->autoReload = null === $options['auto_reload'] ? $this->debug : (bool) $options['auto_reload'];
 $this->strictVariables = (bool) $options['strict_variables'];
@@ -4694,7 +3017,7 @@ return $this->loader;
 }
 public function setCharset($charset)
 {
-$this->charset = $charset;
+$this->charset = strtoupper($charset);
 }
 public function getCharset()
 {
@@ -4782,15 +3105,15 @@ return $this->visitors;
 }
 public function addFilter($name, $filter = null)
 {
-if ($this->extensionInitialized) {
-throw new LogicException(sprintf('Unable to add filter "%s" as extensions have already been initialized.', $name));
-}
 if (!$name instanceof Twig_SimpleFilter && !($filter instanceof Twig_SimpleFilter || $filter instanceof Twig_FilterInterface)) {
 throw new LogicException('A filter must be an instance of Twig_FilterInterface or Twig_SimpleFilter');
 }
 if ($name instanceof Twig_SimpleFilter) {
 $filter = $name;
 $name = $filter->getName();
+}
+if ($this->extensionInitialized) {
+throw new LogicException(sprintf('Unable to add filter "%s" as extensions have already been initialized.', $name));
 }
 $this->staging->addFilter($name, $filter);
 }
@@ -4832,15 +3155,15 @@ return $this->filters;
 }
 public function addTest($name, $test = null)
 {
-if ($this->extensionInitialized) {
-throw new LogicException(sprintf('Unable to add test "%s" as extensions have already been initialized.', $name));
-}
 if (!$name instanceof Twig_SimpleTest && !($test instanceof Twig_SimpleTest || $test instanceof Twig_TestInterface)) {
 throw new LogicException('A test must be an instance of Twig_TestInterface or Twig_SimpleTest');
 }
 if ($name instanceof Twig_SimpleTest) {
 $test = $name;
 $name = $test->getName();
+}
+if ($this->extensionInitialized) {
+throw new LogicException(sprintf('Unable to add test "%s" as extensions have already been initialized.', $name));
 }
 $this->staging->addTest($name, $test);
 }
@@ -4863,15 +3186,15 @@ return false;
 }
 public function addFunction($name, $function = null)
 {
-if ($this->extensionInitialized) {
-throw new LogicException(sprintf('Unable to add function "%s" as extensions have already been initialized.', $name));
-}
 if (!$name instanceof Twig_SimpleFunction && !($function instanceof Twig_SimpleFunction || $function instanceof Twig_FunctionInterface)) {
 throw new LogicException('A function must be an instance of Twig_FunctionInterface or Twig_SimpleFunction');
 }
 if ($name instanceof Twig_SimpleFunction) {
 $function = $name;
 $name = $function->getName();
+}
+if ($this->extensionInitialized) {
+throw new LogicException(sprintf('Unable to add function "%s" as extensions have already been initialized.', $name));
 }
 $this->staging->addFunction($name, $function);
 }
@@ -4973,9 +3296,14 @@ protected function initGlobals()
 {
 $globals = array();
 foreach ($this->extensions as $extension) {
-$globals = array_merge($globals, $extension->getGlobals());
+$extGlob = $extension->getGlobals();
+if (!is_array($extGlob)) {
+throw new UnexpectedValueException(sprintf('"%s::getGlobals()" must return an array of globals.', get_class($extension)));
 }
-return array_merge($globals, $this->staging->getGlobals());
+$globals[] = $extGlob;
+}
+$globals[] = $this->staging->getGlobals();
+return call_user_func_array('array_merge', $globals);
 }
 protected function initExtensions()
 {
@@ -5202,6 +3530,7 @@ new Twig_SimpleFilter('join','twig_join_filter'),
 new Twig_SimpleFilter('split','twig_split_filter'),
 new Twig_SimpleFilter('sort','twig_sort_filter'),
 new Twig_SimpleFilter('merge','twig_array_merge'),
+new Twig_SimpleFilter('batch','twig_array_batch'),
 new Twig_SimpleFilter('reverse','twig_reverse_filter', array('needs_environment'=> true)),
 new Twig_SimpleFilter('length','twig_length_filter', array('needs_environment'=> true)),
 new Twig_SimpleFilter('slice','twig_slice', array('needs_environment'=> true)),
@@ -5213,8 +3542,8 @@ new Twig_SimpleFilter('escape','twig_escape_filter', array('needs_environment'=>
 new Twig_SimpleFilter('e','twig_escape_filter', array('needs_environment'=> true,'is_safe_callback'=>'twig_escape_filter_is_safe')),
 );
 if (function_exists('mb_get_info')) {
-$filters['upper'] = new Twig_Filter_Function('twig_upper_filter', array('needs_environment'=> true));
-$filters['lower'] = new Twig_Filter_Function('twig_lower_filter', array('needs_environment'=> true));
+$filters[] = new Twig_SimpleFilter('upper','twig_upper_filter', array('needs_environment'=> true));
+$filters[] = new Twig_SimpleFilter('lower','twig_lower_filter', array('needs_environment'=> true));
 }
 return $filters;
 }
@@ -5391,6 +3720,9 @@ return number_format((float) $number, $decimal, $decimalPoint, $thousandSep);
 }
 function twig_urlencode_filter($url, $raw = false)
 {
+if (is_array($url)) {
+return http_build_query($url,'','&');
+}
 if ($raw) {
 return rawurlencode($url);
 }
@@ -5528,17 +3860,33 @@ return false;
 }
 function twig_escape_filter(Twig_Environment $env, $string, $strategy ='html', $charset = null, $autoescape = false)
 {
-if ($autoescape && is_object($string) && $string instanceof Twig_Markup) {
+if ($autoescape && $string instanceof Twig_Markup) {
 return $string;
 }
-if (!is_string($string) && !(is_object($string) && method_exists($string,'__toString'))) {
+if (!is_string($string)) {
+if (is_object($string) && method_exists($string,'__toString')) {
+$string = (string) $string;
+} else {
 return $string;
+}
 }
 if (null === $charset) {
 $charset = $env->getCharset();
 }
-$string = (string) $string;
 switch ($strategy) {
+case'html':
+static $htmlspecialcharsCharsets = array('ISO-8859-1'=> true,'ISO8859-1'=> true,'ISO-8859-15'=> true,'ISO8859-15'=> true,'utf-8'=> true,'UTF-8'=> true,'CP866'=> true,'IBM866'=> true,'866'=> true,'CP1251'=> true,'WINDOWS-1251'=> true,'WIN-1251'=> true,'1251'=> true,'CP1252'=> true,'WINDOWS-1252'=> true,'1252'=> true,'KOI8-R'=> true,'KOI8-RU'=> true,'KOI8R'=> true,'BIG5'=> true,'950'=> true,'GB2312'=> true,'936'=> true,'BIG5-HKSCS'=> true,'SHIFT_JIS'=> true,'SJIS'=> true,'932'=> true,'EUC-JP'=> true,'EUCJP'=> true,'ISO8859-5'=> true,'ISO-8859-5'=> true,'MACROMAN'=> true,
+);
+if (isset($htmlspecialcharsCharsets[$charset])) {
+return htmlspecialchars($string, ENT_QUOTES | ENT_SUBSTITUTE, $charset);
+}
+if (isset($htmlspecialcharsCharsets[strtoupper($charset)])) {
+$htmlspecialcharsCharsets[$charset] = true;
+return htmlspecialchars($string, ENT_QUOTES | ENT_SUBSTITUTE, $charset);
+}
+$string = twig_convert_encoding($string,'UTF-8', $charset);
+$string = htmlspecialchars($string, ENT_QUOTES | ENT_SUBSTITUTE,'UTF-8');
+return twig_convert_encoding($string, $charset,'UTF-8');
 case'js':
 if ('UTF-8'!= $charset) {
 $string = twig_convert_encoding($string,'UTF-8', $charset);
@@ -5575,17 +3923,8 @@ if ('UTF-8'!= $charset) {
 $string = twig_convert_encoding($string, $charset,'UTF-8');
 }
 return $string;
-case'html':
-static $htmlspecialcharsCharsets = array('iso-8859-1'=> true,'iso8859-1'=> true,'iso-8859-15'=> true,'iso8859-15'=> true,'utf-8'=> true,'cp866'=> true,'ibm866'=> true,'866'=> true,'cp1251'=> true,'windows-1251'=> true,'win-1251'=> true,'1251'=> true,'cp1252'=> true,'windows-1252'=> true,'1252'=> true,'koi8-r'=> true,'koi8-ru'=> true,'koi8r'=> true,'big5'=> true,'950'=> true,'gb2312'=> true,'936'=> true,'big5-hkscs'=> true,'shift_jis'=> true,'sjis'=> true,'932'=> true,'euc-jp'=> true,'eucjp'=> true,'iso8859-5'=> true,'iso-8859-5'=> true,'macroman'=> true,
-);
-if (isset($htmlspecialcharsCharsets[strtolower($charset)])) {
-return htmlspecialchars($string, ENT_QUOTES | ENT_SUBSTITUTE, $charset);
-}
-$string = twig_convert_encoding($string,'UTF-8', $charset);
-$string = htmlspecialchars($string, ENT_QUOTES | ENT_SUBSTITUTE,'UTF-8');
-return twig_convert_encoding($string, $charset,'UTF-8');
 case'url':
-if (version_compare(PHP_VERSION,'5.3.0','<')) {
+if (PHP_VERSION <'5.3.0') {
 return str_replace('%7E','~', rawurlencode($string));
 }
 return rawurlencode($string);
@@ -5761,6 +4100,22 @@ if (null !== $object) {
 $constant = get_class($object).'::'.$constant;
 }
 return constant($constant);
+}
+function twig_array_batch($items, $size, $fill = null)
+{
+if ($items instanceof Traversable) {
+$items = iterator_to_array($items, false);
+}
+$size = ceil($size);
+$result = array_chunk($items, $size, true);
+if (null !== $fill) {
+$last = count($result) - 1;
+$result[$last] = array_merge(
+$result[$last],
+array_fill(0, $size - count($result[$last]), $fill)
+);
+}
+return $result;
 }
 }
 namespace
@@ -6013,17 +4368,17 @@ return $context[$item];
 }
 protected function getAttribute($object, $item, array $arguments = array(), $type = Twig_TemplateInterface::ANY_CALL, $isDefinedTest = false, $ignoreStrictCheck = false)
 {
-$item = ctype_digit((string) $item) ? (int) $item : (string) $item;
 if (Twig_TemplateInterface::METHOD_CALL !== $type) {
-if ((is_array($object) && array_key_exists($item, $object))
-|| ($object instanceof ArrayAccess && isset($object[$item]))
+$arrayItem = is_bool($item) || is_float($item) ? (int) $item : $item;
+if ((is_array($object) && array_key_exists($arrayItem, $object))
+|| ($object instanceof ArrayAccess && isset($object[$arrayItem]))
 ) {
 if ($isDefinedTest) {
 return true;
 }
-return $object[$item];
+return $object[$arrayItem];
 }
-if (Twig_TemplateInterface::ARRAY_CALL === $type) {
+if (Twig_TemplateInterface::ARRAY_CALL === $type || !is_object($object)) {
 if ($isDefinedTest) {
 return false;
 }
@@ -6031,11 +4386,13 @@ if ($ignoreStrictCheck || !$this->env->isStrictVariables()) {
 return null;
 }
 if (is_object($object)) {
-throw new Twig_Error_Runtime(sprintf('Key "%s" in object (with ArrayAccess) of type "%s" does not exist', $item, get_class($object)), -1, $this->getTemplateName());
+throw new Twig_Error_Runtime(sprintf('Key "%s" in object (with ArrayAccess) of type "%s" does not exist', $arrayItem, get_class($object)), -1, $this->getTemplateName());
 } elseif (is_array($object)) {
-throw new Twig_Error_Runtime(sprintf('Key "%s" for array with keys "%s" does not exist', $item, implode(', ', array_keys($object))), -1, $this->getTemplateName());
+throw new Twig_Error_Runtime(sprintf('Key "%s" for array with keys "%s" does not exist', $arrayItem, implode(', ', array_keys($object))), -1, $this->getTemplateName());
+} elseif (Twig_TemplateInterface::ARRAY_CALL === $type) {
+throw new Twig_Error_Runtime(sprintf('Impossible to access a key ("%s") on a %s variable ("%s")', $item, gettype($object), $object), -1, $this->getTemplateName());
 } else {
-throw new Twig_Error_Runtime(sprintf('Impossible to access a key ("%s") on a "%s" variable', $item, gettype($object)), -1, $this->getTemplateName());
+throw new Twig_Error_Runtime(sprintf('Impossible to access an attribute ("%s") on a %s variable ("%s")', $item, gettype($object), $object), -1, $this->getTemplateName());
 }
 }
 }
@@ -6046,11 +4403,11 @@ return false;
 if ($ignoreStrictCheck || !$this->env->isStrictVariables()) {
 return null;
 }
-throw new Twig_Error_Runtime(sprintf('Item "%s" for "%s" does not exist', $item, is_array($object) ?'Array': $object), -1, $this->getTemplateName());
+throw new Twig_Error_Runtime(sprintf('Impossible to invoke a method ("%s") on a %s variable ("%s")', $item, gettype($object), $object), -1, $this->getTemplateName());
 }
 $class = get_class($object);
 if (Twig_TemplateInterface::METHOD_CALL !== $type) {
-if (isset($object->$item) || array_key_exists($item, $object)) {
+if (isset($object->$item) || array_key_exists((string) $item, $object)) {
 if ($isDefinedTest) {
 return true;
 }
@@ -6065,13 +4422,13 @@ self::$cache[$class]['methods'] = array_change_key_case(array_flip(get_class_met
 }
 $lcItem = strtolower($item);
 if (isset(self::$cache[$class]['methods'][$lcItem])) {
-$method = $item;
+$method = (string) $item;
 } elseif (isset(self::$cache[$class]['methods']['get'.$lcItem])) {
 $method ='get'.$item;
 } elseif (isset(self::$cache[$class]['methods']['is'.$lcItem])) {
 $method ='is'.$item;
 } elseif (isset(self::$cache[$class]['methods']['__call'])) {
-$method = $item;
+$method = (string) $item;
 } else {
 if ($isDefinedTest) {
 return false;
@@ -6206,7 +4563,13 @@ if (is_bool($data) || is_null($data)) {
 return var_export($data, true);
 }
 if ($data instanceof \Exception) {
-return'[object] ('.get_class($data).': '.$data->getMessage().' at '.$data->getFile().':'.$data->getLine().')';
+$previousText ='';
+if ($previous = $data->getPrevious()) {
+do {
+$previousText .=', '.get_class($previous).': '.$previous->getMessage().' at '.$previous->getFile().':'.$previous->getLine();
+} while ($previous = $previous->getPrevious());
+}
+return'[object] ('.get_class($data).': '.$data->getMessage().' at '.$data->getFile().':'.$data->getLine().$previousText.')';
 }
 return parent::normalize($data);
 }
@@ -6698,6 +5061,10 @@ public function addEmergency($message, array $context = array())
 {
 return $this->addRecord(static::EMERGENCY, $message, $context);
 }
+public static function getLevels()
+{
+return array_flip(static::$levels);
+}
 public static function getLevelName($level)
 {
 if (!isset(static::$levels[$level])) {
@@ -6709,7 +5076,7 @@ public function isHandling($level)
 {
 $record = array('level'=> $level,
 );
-foreach ($this->handlers as $key => $handler) {
+foreach ($this->handlers as $handler) {
 if ($handler->isHandling($record)) {
 return true;
 }
@@ -6820,12 +5187,14 @@ public function getLogs()
 if ($logger = $this->getDebugLogger()) {
 return $logger->getLogs();
 }
+return array();
 }
 public function countErrors()
 {
 if ($logger = $this->getDebugLogger()) {
 return $logger->countErrors();
 }
+return 0;
 }
 private function getDebugLogger()
 {
@@ -6888,13 +5257,312 @@ return $record['level'] >= $this->actionLevel;
 }
 }
 }
+namespace Assetic
+{
+interface ValueSupplierInterface
+{
+public function getValues();
+}
+}
+namespace Symfony\Bundle\AsseticBundle
+{
+use Assetic\ValueSupplierInterface;
+use Symfony\Component\DependencyInjection\ContainerInterface;
+class DefaultValueSupplier implements ValueSupplierInterface
+{
+protected $container;
+public function __construct(ContainerInterface $container)
+{
+$this->container = $container;
+}
+public function getValues()
+{
+if (!$this->container->isScopeActive('request')) {
+return array();
+}
+$request = $this->container->get('request');
+return array('locale'=> $request->getLocale(),'env'=> $this->container->getParameter('kernel.environment'),
+);
+}
+}
+}
+namespace Assetic\Factory
+{
+use Assetic\Asset\AssetCollection;
+use Assetic\Asset\AssetCollectionInterface;
+use Assetic\Asset\AssetInterface;
+use Assetic\Asset\AssetReference;
+use Assetic\Asset\FileAsset;
+use Assetic\Asset\GlobAsset;
+use Assetic\Asset\HttpAsset;
+use Assetic\AssetManager;
+use Assetic\Factory\Worker\WorkerInterface;
+use Assetic\FilterManager;
+class AssetFactory
+{
+private $root;
+private $debug;
+private $output;
+private $workers;
+private $am;
+private $fm;
+public function __construct($root, $debug = false)
+{
+$this->root = rtrim($root,'/');
+$this->debug = $debug;
+$this->output ='assetic/*';
+$this->workers = array();
+}
+public function setDebug($debug)
+{
+$this->debug = $debug;
+}
+public function isDebug()
+{
+return $this->debug;
+}
+public function setDefaultOutput($output)
+{
+$this->output = $output;
+}
+public function addWorker(WorkerInterface $worker)
+{
+$this->workers[] = $worker;
+}
+public function getAssetManager()
+{
+return $this->am;
+}
+public function setAssetManager(AssetManager $am)
+{
+$this->am = $am;
+}
+public function getFilterManager()
+{
+return $this->fm;
+}
+public function setFilterManager(FilterManager $fm)
+{
+$this->fm = $fm;
+}
+public function createAsset($inputs = array(), $filters = array(), array $options = array())
+{
+if (!is_array($inputs)) {
+$inputs = array($inputs);
+}
+if (!is_array($filters)) {
+$filters = array($filters);
+}
+if (!isset($options['output'])) {
+$options['output'] = $this->output;
+}
+if (!isset($options['vars'])) {
+$options['vars'] = array();
+}
+if (!isset($options['debug'])) {
+$options['debug'] = $this->debug;
+}
+if (!isset($options['root'])) {
+$options['root'] = array($this->root);
+} else {
+if (!is_array($options['root'])) {
+$options['root'] = array($options['root']);
+}
+$options['root'][] = $this->root;
+}
+if (!isset($options['name'])) {
+$options['name'] = $this->generateAssetName($inputs, $filters, $options);
+}
+$asset = $this->createAssetCollection(array(), $options);
+$extensions = array();
+foreach ($inputs as $input) {
+if (is_array($input)) {
+$asset->add(call_user_func_array(array($this,'createAsset'), $input));
+} else {
+$asset->add($this->parseInput($input, $options));
+$extensions[pathinfo($input, PATHINFO_EXTENSION)] = true;
+}
+}
+foreach ($filters as $filter) {
+if ('?'!= $filter[0]) {
+$asset->ensureFilter($this->getFilter($filter));
+} elseif (!$options['debug']) {
+$asset->ensureFilter($this->getFilter(substr($filter, 1)));
+}
+}
+if (!empty($options['vars'])) {
+$toAdd = array();
+foreach ($options['vars'] as $var) {
+if (false !== strpos($options['output'],'{'.$var.'}')) {
+continue;
+}
+$toAdd[] ='{'.$var.'}';
+}
+if ($toAdd) {
+$options['output'] = str_replace('*','*.'.implode('.', $toAdd), $options['output']);
+}
+}
+if (1 == count($extensions) && !pathinfo($options['output'], PATHINFO_EXTENSION) && $extension = key($extensions)) {
+$options['output'] .='.'.$extension;
+}
+$asset->setTargetPath(str_replace('*', $options['name'], $options['output']));
+return $this->applyWorkers($asset);
+}
+public function generateAssetName($inputs, $filters, $options = array())
+{
+foreach (array_diff(array_keys($options), array('output','debug','root')) as $key) {
+unset($options[$key]);
+}
+ksort($options);
+return substr(sha1(serialize($inputs).serialize($filters).serialize($options)), 0, 7);
+}
+protected function parseInput($input, array $options = array())
+{
+if ('@'== $input[0]) {
+return $this->createAssetReference(substr($input, 1));
+}
+if (false !== strpos($input,'://') || 0 === strpos($input,'//')) {
+return $this->createHttpAsset($input, $options['vars']);
+}
+if (self::isAbsolutePath($input)) {
+if ($root = self::findRootDir($input, $options['root'])) {
+$path = ltrim(substr($input, strlen($root)),'/');
+} else {
+$path = null;
+}
+} else {
+$root = $this->root;
+$path = $input;
+$input = $this->root.'/'.$path;
+}
+if (false !== strpos($input,'*')) {
+return $this->createGlobAsset($input, $root, $options['vars']);
+}
+return $this->createFileAsset($input, $root, $path, $options['vars']);
+}
+protected function createAssetCollection(array $assets = array(), array $options = array())
+{
+return new AssetCollection($assets, array(), null, isset($options['vars']) ? $options['vars'] : array());
+}
+protected function createAssetReference($name)
+{
+if (!$this->am) {
+throw new \LogicException('There is no asset manager.');
+}
+return new AssetReference($this->am, $name);
+}
+protected function createHttpAsset($sourceUrl, $vars)
+{
+return new HttpAsset($sourceUrl, array(), false, $vars);
+}
+protected function createGlobAsset($glob, $root = null, $vars)
+{
+return new GlobAsset($glob, array(), $root, $vars);
+}
+protected function createFileAsset($source, $root = null, $path = null, $vars)
+{
+return new FileAsset($source, array(), $root, $path, $vars);
+}
+protected function getFilter($name)
+{
+if (!$this->fm) {
+throw new \LogicException('There is no filter manager.');
+}
+return $this->fm->get($name);
+}
+private function applyWorkers(AssetCollectionInterface $asset)
+{
+foreach ($asset as $leaf) {
+foreach ($this->workers as $worker) {
+$retval = $worker->process($leaf);
+if ($retval instanceof AssetInterface && $leaf !== $retval) {
+$asset->replaceLeaf($leaf, $retval);
+}
+}
+}
+foreach ($this->workers as $worker) {
+$retval = $worker->process($asset);
+if ($retval instanceof AssetInterface) {
+$asset = $retval;
+}
+}
+return $asset instanceof AssetCollectionInterface ? $asset : $this->createAssetCollection(array($asset));
+}
+private static function isAbsolutePath($path)
+{
+return'/'== $path[0] ||'\\'== $path[0] || (3 < strlen($path) && ctype_alpha($path[0]) && $path[1] ==':'&& ('\\'== $path[2] ||'/'== $path[2]));
+}
+private static function findRootDir($path, array $roots)
+{
+foreach ($roots as $root) {
+if (0 === strpos($path, $root)) {
+return $root;
+}
+}
+}
+}
+}
+namespace Symfony\Bundle\AsseticBundle\Factory
+{
+use Assetic\Factory\AssetFactory as BaseAssetFactory;
+use Symfony\Component\DependencyInjection\ContainerInterface;
+use Symfony\Component\DependencyInjection\ParameterBag\ParameterBagInterface;
+use Symfony\Component\HttpKernel\KernelInterface;
+class AssetFactory extends BaseAssetFactory
+{
+private $kernel;
+private $container;
+private $parameterBag;
+public function __construct(KernelInterface $kernel, ContainerInterface $container, ParameterBagInterface $parameterBag, $baseDir, $debug = false)
+{
+$this->kernel = $kernel;
+$this->container = $container;
+$this->parameterBag = $parameterBag;
+parent::__construct($baseDir, $debug);
+}
+protected function parseInput($input, array $options = array())
+{
+$input = $this->parameterBag->resolveValue($input);
+if ('@'== $input[0] && false !== strpos($input,'/')) {
+$bundle = substr($input, 1);
+if (false !== $pos = strpos($bundle,'/')) {
+$bundle = substr($bundle, 0, $pos);
+}
+$options['root'] = array($this->kernel->getBundle($bundle)->getPath());
+if (false !== $pos = strpos($input,'*')) {
+list($before, $after) = explode('*', $input, 2);
+$input = $this->kernel->locateResource($before).'*'.$after;
+} else {
+$input = $this->kernel->locateResource($input);
+}
+}
+return parent::parseInput($input, $options);
+}
+protected function createAssetReference($name)
+{
+if (!$this->getAssetManager()) {
+$this->setAssetManager($this->container->get('assetic.asset_manager'));
+}
+return parent::createAssetReference($name);
+}
+protected function getFilter($name)
+{
+if (!$this->getFilterManager()) {
+$this->setFilterManager($this->container->get('assetic.filter_manager'));
+}
+return parent::getFilter($name);
+}
+}
+}
 namespace Sensio\Bundle\FrameworkExtraBundle\EventListener
 {
 use Doctrine\Common\Annotations\Reader;
 use Symfony\Component\HttpKernel\Event\FilterControllerEvent;
+use Symfony\Component\HttpKernel\KernelEvents;
+use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Sensio\Bundle\FrameworkExtraBundle\Configuration\ConfigurationInterface;
 use Doctrine\Common\Util\ClassUtils;
-class ControllerListener
+class ControllerListener implements EventSubscriberInterface
 {
 protected $reader;
 public function __construct(Reader $reader)
@@ -6947,6 +5615,12 @@ $configurations['_'.$configuration->getAliasName()] = $configuration;
 }
 return $configurations;
 }
+public static function getSubscribedEvents()
+{
+return array(
+KernelEvents::CONTROLLER =>'onKernelController',
+);
+}
 }
 }
 namespace Sensio\Bundle\FrameworkExtraBundle\EventListener
@@ -6955,7 +5629,9 @@ use Sensio\Bundle\FrameworkExtraBundle\Configuration\ParamConverter;
 use Sensio\Bundle\FrameworkExtraBundle\Request\ParamConverter\ParamConverterManager;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Event\FilterControllerEvent;
-class ParamConverterListener
+use Symfony\Component\HttpKernel\KernelEvents;
+use Symfony\Component\EventDispatcher\EventSubscriberInterface;
+class ParamConverterListener implements EventSubscriberInterface
 {
 protected $manager;
 public function __construct(ParamConverterManager $manager)
@@ -6993,6 +5669,12 @@ $configurations[$name]->setClass($param->getClass()->getName());
 $configurations[$name]->setIsOptional($param->isOptional());
 }
 $this->manager->apply($request, $configurations);
+}
+public static function getSubscribedEvents()
+{
+return array(
+KernelEvents::CONTROLLER =>'onKernelController',
+);
 }
 }
 }
@@ -7134,6 +5816,9 @@ if ($metadata->hasField($field) || ($metadata->hasAssociation($field) && $metada
 $criteria[$field] = $request->attributes->get($attribute);
 }
 }
+if ($options['strip_null']) {
+$criteria = array_filter($criteria, function ($value) { return !is_null($value); });
+}
 if (!$criteria) {
 return false;
 }
@@ -7164,7 +5849,7 @@ return ! $em->getMetadataFactory()->isTransient($configuration->getClass());
 }
 protected function getOptions(ConfigurationInterface $configuration)
 {
-return array_replace(array('entity_manager'=> null,'exclude'=> array(),'mapping'=> array(),
+return array_replace(array('entity_manager'=> null,'exclude'=> array(),'mapping'=> array(),'strip_null'=> false,
 ), $configuration->getOptions());
 }
 private function getManager($name, $class)
@@ -7250,9 +5935,11 @@ namespace Sensio\Bundle\FrameworkExtraBundle\EventListener
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\HttpKernel\Event\FilterControllerEvent;
 use Symfony\Component\HttpKernel\Event\GetResponseForControllerResultEvent;
+use Symfony\Component\HttpKernel\KernelEvents;
+use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Sensio\Bundle\FrameworkExtraBundle\Configuration\Template;
-class TemplateListener
+class TemplateListener implements EventSubscriberInterface
 {
 protected $container;
 public function __construct(ContainerInterface $container)
@@ -7315,13 +6002,22 @@ return $templating->stream($template, $parameters);
 $event->setResponse(new StreamedResponse($callback));
 }
 }
+public static function getSubscribedEvents()
+{
+return array(
+KernelEvents::CONTROLLER => array('onKernelController', -128),
+KernelEvents::VIEW =>'onKernelView',
+);
+}
 }
 }
 namespace Sensio\Bundle\FrameworkExtraBundle\EventListener
 {
-use Symfony\Component\HttpKernel\Event\FilterResponseEvent;
 use Symfony\Component\HttpFoundation\Response;
-class CacheListener
+use Symfony\Component\HttpKernel\Event\FilterResponseEvent;
+use Symfony\Component\HttpKernel\KernelEvents;
+use Symfony\Component\EventDispatcher\EventSubscriberInterface;
+class CacheListener implements EventSubscriberInterface
 {
 public function onKernelResponse(FilterResponseEvent $event)
 {
@@ -7350,6 +6046,12 @@ $response->setPublic();
 }
 $event->setResponse($response);
 }
+public static function getSubscribedEvents()
+{
+return array(
+KernelEvents::RESPONSE =>'onKernelResponse',
+);
+}
 }
 }
 namespace Sensio\Bundle\FrameworkExtraBundle\Configuration
@@ -7372,148 +6074,6 @@ throw new \RuntimeException(sprintf('Unknown key "%s" for annotation "@%s".', $k
 }
 $this->$name($v);
 }
-}
-}
-}
-namespace JMS\DiExtraBundle\HttpKernel
-{
-use Metadata\ClassHierarchyMetadata;
-use JMS\DiExtraBundle\Metadata\ClassMetadata;
-use CG\Core\DefaultNamingStrategy;
-use CG\Proxy\Enhancer;
-use JMS\AopBundle\DependencyInjection\Compiler\PointcutMatchingPass;
-use JMS\DiExtraBundle\Generator\DefinitionInjectorGenerator;
-use JMS\DiExtraBundle\Generator\LookupMethodClassGenerator;
-use JMS\DiExtraBundle\DependencyInjection\Dumper\PhpDumper;
-use Metadata\MetadataFactory;
-use Symfony\Component\DependencyInjection\Compiler\InlineServiceDefinitionsPass;
-use Symfony\Component\DependencyInjection\ContainerAwareInterface;
-use Symfony\Component\DependencyInjection\Compiler\ResolveDefinitionTemplatesPass;
-use Symfony\Component\DependencyInjection\Parameter;
-use Symfony\Component\DependencyInjection\Reference;
-use Symfony\Component\DependencyInjection\Definition;
-use Symfony\Component\Config\Resource\FileResource;
-use Symfony\Component\DependencyInjection\ContainerBuilder;
-use Symfony\Component\Config\ConfigCache;
-use Symfony\Bundle\FrameworkBundle\Controller\ControllerResolver as BaseControllerResolver;
-class ControllerResolver extends BaseControllerResolver
-{
-protected function createController($controller)
-{
-if (false === $pos = strpos($controller,'::')) {
-$count = substr_count($controller,':');
-if (2 == $count) {
-$controller = $this->parser->parse($controller);
-$pos = strpos($controller,'::');
-} elseif (1 == $count) {
-list($service, $method) = explode(':', $controller);
-return array($this->container->get($service), $method);
-} else {
-throw new \LogicException(sprintf('Unable to parse the controller name "%s".', $controller));
-}
-}
-$class = substr($controller, 0, $pos);
-$method = substr($controller, $pos+2);
-if (!class_exists($class)) {
-throw new \InvalidArgumentException(sprintf('Class "%s" does not exist.', $class));
-}
-$injector = $this->createInjector($class);
-$controller = call_user_func($injector, $this->container);
-if ($controller instanceof ContainerAwareInterface) {
-$controller->setContainer($this->container);
-}
-return array($controller, $method);
-}
-public function createInjector($class)
-{
-$filename = $this->container->getParameter('jms_di_extra.cache_dir').'/controller_injectors/'.str_replace('\\','', $class).'.php';
-$cache = new ConfigCache($filename, $this->container->getParameter('kernel.debug'));
-if (!$cache->isFresh()) {
-$metadata = $this->container->get('jms_di_extra.metadata.metadata_factory')->getMetadataForClass($class);
-if (null === $metadata) {
-$metadata = new ClassHierarchyMetadata();
-$metadata->addClassMetadata(new ClassMetadata($class));
-}
-if (null !== $metadata->getOutsideClassMetadata()->id
-&& 0 !== strpos($metadata->getOutsideClassMetadata()->id,'_jms_di_extra.unnamed.service')) {
-return;
-}
-$this->prepareContainer($cache, $filename, $metadata, $class);
-}
-if ( ! class_exists($class.'__JMSInjector', false)) {
-require $filename;
-}
-return array($class.'__JMSInjector','inject');
-}
-private function prepareContainer($cache, $containerFilename, $metadata, $className)
-{
-$container = new ContainerBuilder();
-$container->setParameter('jms_aop.cache_dir', $this->container->getParameter('jms_di_extra.cache_dir'));
-$def = $container
-->register('jms_aop.interceptor_loader','JMS\AopBundle\Aop\InterceptorLoader')
-->addArgument(new Reference('service_container'))
-->setPublic(false)
-;
-$ref = $metadata->getOutsideClassMetadata()->reflection;
-while ($ref && false !== $filename = $ref->getFilename()) {
-$container->addResource(new FileResource($filename));
-$ref = $ref->getParentClass();
-}
-$definitions = $this->container->get('jms_di_extra.metadata.converter')->convert($metadata);
-$serviceIds = $parameters = array();
-$controllerDef = array_pop($definitions);
-$container->setDefinition('controller', $controllerDef);
-foreach ($definitions as $id => $def) {
-$container->setDefinition($id, $def);
-}
-$this->generateLookupMethods($controllerDef, $metadata);
-$config = $container->getCompilerPassConfig();
-$config->setOptimizationPasses(array());
-$config->setRemovingPasses(array());
-$config->addPass(new ResolveDefinitionTemplatesPass());
-$config->addPass(new PointcutMatchingPass($this->container->get('jms_aop.pointcut_container')->getPointcuts()));
-$config->addPass(new InlineServiceDefinitionsPass());
-$container->compile();
-if (!file_exists($dir = dirname($containerFilename))) {
-if (false === @mkdir($dir, 0777, true)) {
-throw new \RuntimeException(sprintf('Could not create directory "%s".', $dir));
-}
-}
-static $generator;
-if (null === $generator) {
-$generator = new DefinitionInjectorGenerator();
-}
-$cache->write($generator->generate($container->getDefinition('controller'), $className), $container->getResources());
-}
-private function generateLookupMethods($def, $metadata)
-{
-$found = false;
-foreach ($metadata->classMetadata as $cMetadata) {
-if (!empty($cMetadata->lookupMethods)) {
-$found = true;
-break;
-}
-}
-if (!$found) {
-return;
-}
-$generator = new LookupMethodClassGenerator($metadata);
-$outerClass = $metadata->getOutsideClassMetadata()->reflection;
-if ($file = $def->getFile()) {
-$generator->setRequiredFile($file);
-}
-$enhancer = new Enhancer(
-$outerClass,
-array(),
-array(
-$generator,
-)
-);
-$filename = $this->container->getParameter('jms_di_extra.cache_dir').'/lookup_method_classes/'.str_replace('\\','-', $outerClass->name).'.php';
-$enhancer->writeClass($filename);
-$def->setFile($filename);
-$def->setClass($enhancer->getClassName($outerClass));
-$def->addMethodCall('__jmsDiExtra_setContainer', array(new Reference('service_container')));
 }
 }
 }

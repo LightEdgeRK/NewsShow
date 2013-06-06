@@ -2,12 +2,15 @@
 
 {% block mainContent %}
 
+    <div id="WriteBox">
+        {{ form(form ,{'id' : 'WriteForm'}) }}
+
+    </div>
+
+    <div style="clear:both;"></div>
+
     <script type="text/javascript">
 
-        $('#NewsBox').masonry({
-            itemSelector: '.newsSummaryItem',
-            columnWidth: 400
-        });
 
         $('#navWriteNews').css('background-color','#BF9004');
     </script>

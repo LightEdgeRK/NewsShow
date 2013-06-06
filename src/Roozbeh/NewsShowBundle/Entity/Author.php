@@ -224,6 +224,13 @@ class Author implements UserInterface
         return $this->categories;
     }
 
+
+    public function hasCategory(\Roozbeh\NewsShowBundle\Entity\Category $category)
+    {
+        return $this->categories->contains($category);
+    }
+
+
     /**
      * Add newsItems
      *

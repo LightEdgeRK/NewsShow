@@ -5,12 +5,12 @@
         {% for newsSumItem in newsSumItems %}
 
             <div class="newsSummaryItem">
-                <img class="newsImg" src="{{ asset( newsSumItem.ImgSrc ) }}"/>
+                <img class="newsImg" src="{{ asset( newsSumItem.imgLink ) }}"/>
                 <div class="newsTitle"> {{ newsSumItem.title }}</div>
                 <div class="newsSum"> {{ newsSumItem.summary }} </div>
-                <div class="newsAuthor"> {{ newsSumItem.author }} </div>
-                <div class="newsTime"> {{ newsSumItem.time }} </div>
-                <div class="newsGroup"> Category: <span class="newsGroupName"> {{ newsSumItem.groupName }} </span> </div>
+                <div class="newsAuthor"> {{ newsSumItem.author.Firstname }} {{ newsSumItem.author.Lastname }}</div>
+                <div class="newsTime"> {{ newsSumItem.DateTime.date }} {{ newsSumItem.DateTime.timezone }} </div>
+                <div class="newsGroup"> Category: <span class="newsGroupName"> {{ newsSumItem.category.Name }} </span> </div>
             </div>
 
 
